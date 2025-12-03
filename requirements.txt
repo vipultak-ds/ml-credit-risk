@@ -1,0 +1,20 @@
+# Core ML Libraries
+pandas==2.0.3
+numpy==1.24.3
+scikit-learn==1.3.0
+xgboost==1.7.6
+
+# MLflow
+mlflow==2.8.1
+
+# API Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+
+# Configuration
+PyYAML==6.0.1
+python-dotenv==1.0.0
+
+# Utilities
+requests==2.31.0

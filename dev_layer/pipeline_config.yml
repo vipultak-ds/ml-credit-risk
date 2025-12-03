@@ -1,0 +1,339 @@
+# =====================================================================
+# 🎯 UNIFIED ML PIPELINE CONFIGURATION
+# Single Source of Truth for All Model Types
+# =====================================================================
+
+# =====================================================================
+# MODEL CONFIGURATION
+# =====================================================================
+model:
+  type: "random_forest"                    # Options: random_forest, xgboost, lightgbm, catboost
+  catalog: "workspace"
+  schema: "ml_credit_risk"
+  base_name: "credit_risk_model"           # Will be suffixed with model_type
+
+# =====================================================================
+# EXPERIMENT TRACKING
+# =====================================================================
+experiment:
+  name: "/Shared/CreditRisk_ML_Experiments"
+  artifact_path: "ml_model"                # Generic path for all models
+  run_name_prefix: "credit_risk"           # Prefix for run names
+
+# =====================================================================
+# REGISTRY BEHAVIOR CONTROL
+# =====================================================================
+registry:
+  mode: "always_register"                  # Options: always_register, threshold_based, manual
+  
+  # Duplicate Detection Settings
+  duplicate_detection:
+    enabled: true                          # Skip if same metrics exist
+    metrics_to_compare:                    # Metrics for duplicate check
+      - "test_accuracy"
+      - "test_f1"
+      - "test_roc_auc"
+    tolerance: 0.001                       # Difference threshold (0.1% tolerance)
+    
+  # Model Versioning Strategy
+  versioning:
+    auto_increment: true                   # Auto version bump
+    track_experiment_id: true              # Link to MLflow experiment
+    
+  # Alias Management
+  aliases:
+    auto_assign_best: true                 # Auto assign "Best" alias to top model
+    staging: "Staging"
+    production: "Production"
+    best: "Best"
+
+# =====================================================================
+# METRICS CONFIGURATION
+# =====================================================================
+metrics:
+  # Classification Metrics (for credit risk)
+  classification:
+    primary_metric: "test_f1"              # Main metric for model comparison
+    direction: "maximize"                  # maximize or minimize
+    
+    tracked_metrics:                       # All metrics to log
+      - "test_accuracy"
+      - "test_precision"
+      - "test_recall"
+      - "test_f1"
+      - "test_roc_auc"
+      - "train_accuracy"
+      - "train_time"
+      - "inference_time"
+    
+    threshold_metrics:                     # Metrics with minimum thresholds
+      test_f1: 0.65                        # Minimum F1 score
+      test_roc_auc: 0.70                   # Minimum ROC-AUC
+      test_recall: 0.60                    # Minimum recall (important for credit risk)
+  
+  # Regression Metrics (for other use cases)
+  regression:
+    primary_metric: "test_rmse"
+    direction: "minimize"
+    
+    tracked_metrics:
+      - "test_rmse"
+      - "test_mae"
+      - "test_r2"
+      - "test_mape"
+      - "train_rmse"
+      - "train_time"
+      - "inference_time"
+    
+    threshold_metrics:
+      test_r2: 0.75
+      test_mape: 15.0
+
+# =====================================================================
+# DATA CONFIGURATION
+# =====================================================================
+data:
+  input_table: "workspace.ml_credit_risk.credit_risk_data"
+  
+  features:
+    - checking_balance
+    - months_loan_duration
+    - credit_history
+    - purpose
+    - amount
+    - savings_balance
+    - employment_duration
+    - percent_of_income
+    - years_at_residence
+    - age
+    - other_credit
+    - housing
+    - existing_loans_count
+    - job
+    - dependents
+    - phone
+    
+  label: "default"                         # Target column
+  
+  split:
+    test_size: 0.2
+    validation_size: 0.1                   # Optional validation set
+    random_state: 42
+    stratify: true                         # Stratified split for imbalanced data
+
+# =====================================================================
+# PREPROCESSING CONFIGURATION
+# =====================================================================
+preprocessing:
+  enabled: true
+  output_table: "workspace.ml_credit_risk.credit_risk_processed"
+  
+  steps:
+    - name: "unit_cleanup"
+      enabled: true
+    - name: "data_preparation"
+      enabled: true
+    - name: "ordinal_encoding"
+      enabled: true
+    - name: "onehot_encoding"
+      enabled: true
+    - name: "standard_scaling"
+      enabled: true
+
+# =====================================================================
+# MODEL EVALUATION TABLES
+# =====================================================================
+tables:
+  # Evaluation Results
+  evaluation_log: "workspace.ml_credit_risk.model_evaluation_log"
+  
+  # Best Model Tracking
+  best_model_metadata: "workspace.ml_credit_risk.best_model_metadata"
+  
+  # UAT/Inference Results
+  uat_results: "workspace.ml_credit_risk.uat_inference_results"
+  
+  # Feature Importance
+  feature_importance: "workspace.ml_credit_risk.feature_importance_log"
+  
+  # Model Comparison
+  model_comparison: "workspace.ml_credit_risk.model_comparison_summary"
+
+# =====================================================================
+# MODEL REGISTRY WORKFLOW
+# =====================================================================
+workflow:
+  # Step 1: Training
+  training:
+    enabled: true
+    log_to_mlflow: true
+    save_artifacts: true
+    
+  # Step 2: Evaluation (Always Run)
+  evaluation:
+    enabled: true
+    save_to_table: true
+    generate_plots: true
+    compare_with_previous: true
+    
+  # Step 3: Registration Decision Logic
+  registration:
+    strategy: "smart_register"             # Options: always, smart_register, threshold, manual
+    
+    # Smart Register Rules
+    smart_rules:
+      skip_duplicates: true                # Skip if metrics match existing model
+      respect_thresholds: false            # Ignore threshold checks (register all)
+      track_all_experiments: true          # Log all experiments regardless
+      
+    # What to register
+    register_components:
+      model: true
+      preprocessor: true
+      config: true
+      plots: true
+      feature_names: true
+      
+  # Step 4: Best Model Selection (Post-registration)
+  best_model_selection:
+    enabled: true
+    auto_update: true                      # Auto assign best alias
+    criteria: "primary_metric"             # Use primary metric for selection
+    requires_uat: false                    # Don't require UAT for best model
+
+# =====================================================================
+# UAT CONFIGURATION
+# =====================================================================
+uat:
+  enabled: true
+  
+  # Classification Thresholds
+  classification_thresholds:
+    min_accuracy: 0.70
+    min_f1: 0.65
+    min_roc_auc: 0.70
+    min_recall: 0.60
+    max_inference_time_ms: 500
+    
+  # Regression Thresholds
+  regression_thresholds:
+    mape_threshold: 15.0
+    r2_threshold: 0.75
+    max_inference_time_ms: 200
+  
+  test_data:
+    use_holdout: true                      # Use separate holdout set
+    sample_size: 1000                      # Number of samples for UAT
+    
+  approval:
+    manual_review_required: false          # Auto approve if thresholds met
+    notify_on_failure: true
+
+# =====================================================================
+# LOGGING & MONITORING
+# =====================================================================
+logging:
+  level: "INFO"                            # DEBUG, INFO, WARNING, ERROR
+  log_to_table: true
+  log_to_file: false
+  
+  track_artifacts:
+    confusion_matrix: true
+    roc_curve: true
+    feature_importance: true
+    learning_curves: false
+    residual_plots: false
+
+# =====================================================================
+# DEPLOYMENT ALIASES
+# =====================================================================
+aliases:
+  staging: "Staging"
+  production: "Production"
+  best: "Best"
+  baseline: "Baseline"
+  
+  # Alias Assignment Rules
+  assignment_rules:
+    staging:
+      condition: "passes_thresholds"
+      auto_assign: true
+      
+    production:
+      condition: "manual_approval"
+      auto_assign: false
+      
+    best:
+      condition: "best_primary_metric"
+      auto_assign: true
+
+# =====================================================================
+# NOTIFICATION SETTINGS
+# =====================================================================
+notifications:
+  enabled: false
+  
+  triggers:
+    - event: "model_registered"
+      enabled: true
+    - event: "new_champion"
+      enabled: true
+    - event: "uat_failure"
+      enabled: true
+    - event: "training_failure"
+      enabled: true
+      
+  channels:
+    email: []
+    slack: []
+    teams: []
+
+# =====================================================================
+# EXPERIMENT COMPARISON SETTINGS
+# =====================================================================
+comparison:
+  enabled: true
+  
+  # How to compare experiments
+  comparison_scope: "model_type"           # Options: all, model_type, recent_n
+  recent_n: 10                             # If scope=recent_n
+  
+  # What to compare
+  compare_metrics:
+    - test_f1
+    - test_accuracy
+    - test_roc_auc
+    - test_recall
+    - train_time
+    - inference_time
+  
+  # Generate comparison artifacts
+  generate_artifacts:
+    comparison_table: true
+    performance_plot: true
+    rank_models: true
+
+# =====================================================================
+# ADVANCED SETTINGS
+# =====================================================================
+advanced:
+  # Parallel Processing
+  parallel:
+    enabled: false
+    max_workers: 4
+    
+  # Checkpointing
+  checkpointing:
+    enabled: true
+    checkpoint_dir: "/dbfs/ml/checkpoints"
+    
+  # Model Explainability
+  explainability:
+    enabled: false
+    methods: ["shap", "lime"]
+    
+  # Model Monitoring
+  monitoring:
+    enabled: false
+    drift_detection: false
+    performance_tracking: true
