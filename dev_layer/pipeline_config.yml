@@ -167,10 +167,10 @@ workflow:
 uat:
   enabled: true
   classification_thresholds:
-    min_accuracy: 0.70
-    min_f1: 0.65
-    min_roc_auc: 0.70
-    min_recall: 0.60
+    min_accuracy: 0.75
+    min_f1: 0.70
+    min_roc_auc: 0.75
+    min_recall: 0.65
     max_inference_time_ms: 500
 
   regression_thresholds:
