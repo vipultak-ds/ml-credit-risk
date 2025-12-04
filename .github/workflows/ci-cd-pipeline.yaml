@@ -1,0 +1,89 @@
+name: Databricks MLOps CI/CD
+
+on:
+  push:
+    branches:
+      - main  # Runs when code is pushed to main
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+jobs:
+  deploy:
+    name: Deploy to Databricks
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Checkout the repo
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # Step 2: Set up Python 3.10
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      # Step 3: Install dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install databricks-sdk
+
+      # Step 4: Sync Repository to Databricks Repos
+      - name: Sync Git Repository to Databricks Repos
+        run: python scripts/add_repo.py
+
+      # Step 5: Create/Update Databricks Jobs
+      - name: Create or Update Databricks Jobs
+        run: python scripts/create_job.py
+
+      # -------------------------
+      # 🔔 Slack Notification Steps
+      # -------------------------
+
+      - name: Slack Notification - Success
+        if: success()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": ":white_check_mark: *CI/CD Success* — Databricks MLOps Pipeline",
+              "blocks": [
+                { "type": "section", "text": { "type": "mrkdwn", "text": "*✅ CI/CD Success*\nDatabricks MLOps pipeline completed successfully." } },
+                { "type": "section", "fields": [
+                    { "type": "mrkdwn", "text": "*Repo:*\n${{ github.repository }}" },
+                    { "type": "mrkdwn", "text": "*Branch:*\n${{ github.ref }}" },
+                    { "type": "mrkdwn", "text": "*Commit:*\n`${{ github.sha }}`" },
+                    { "type": "mrkdwn", "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open Run>" }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Slack Notification - Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": ":x: *CI/CD Failure* — Databricks MLOps Pipeline",
+              "blocks": [
+                { "type": "section", "text": { "type": "mrkdwn", "text": "*❌ CI/CD Failed*\nPlease check the Actions logs for details." } },
+                { "type": "section", "fields": [
+                    { "type": "mrkdwn", "text": "*Repo:*\n${{ github.repository }}" },
+                    { "type": "mrkdwn", "text": "*Branch:*\n${{ github.ref }}" },
+                    { "type": "mrkdwn", "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open Run>" }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    

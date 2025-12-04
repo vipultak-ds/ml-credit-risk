@@ -1,21 +1,21 @@
- # 🎯 UNIFIED ML PIPELINE CONFIGURATION
+# 🎯 UNIFIED ML PIPELINE CONFIGURATION
 
- # MODEL CONFIGURATION
+# MODEL CONFIGURATION
 model:
   type: "random_forest"
   catalog: "workspace"
   schema: "ml_credit_risk"
   base_name: "credit_risk_model"
 
- # EXPERIMENT TRACKING
+# EXPERIMENT TRACKING
 experiment:
   name: "/Shared/CreditRisk_ML_Experiments"
   artifact_path: "ml_model"
   run_name_prefix: "credit_risk"
 
- # REGISTRY BEHAVIOR CONTROL
+# REGISTRY BEHAVIOR CONTROL
 registry:
-  mode: "always_register"   # <-- Stays same
+  mode: "always_register"
 
   duplicate_detection:
     enabled: true
@@ -30,12 +30,12 @@ registry:
     track_experiment_id: true
 
   aliases:
-    auto_assign_best: false     # <-- CHANGED (disabled best model auto-tagging)
+    auto_assign_best: false
     staging: "Staging"
     production: "Production"
     best: "Best"
 
- # METRICS CONFIGURATION
+# METRICS CONFIGURATION
 metrics:
   classification:
     primary_metric: "test_f1"
@@ -72,7 +72,7 @@ metrics:
       test_r2: 0.75
       test_mape: 15.0
 
- # DATA CONFIGURATION
+# DATA CONFIGURATION
 data:
   input_table: "workspace.ml_credit_risk.credit_risk_data"
   preprocessed_table: "workspace.ml_credit_risk.credit_risk_preprocessed"
@@ -102,7 +102,7 @@ data:
     random_state: 42
     stratify: true
 
- # PREPROCESSING CONFIGURATION
+# PREPROCESSING CONFIGURATION
 preprocessing:
   enabled: false
   output_table: "workspace.ml_credit_risk.credit_risk_preprocessed"
@@ -123,7 +123,7 @@ preprocessing:
     - name: "standard_scaling"
       enabled: true
 
- # MODEL EVALUATION TABLES
+# MODEL EVALUATION TABLES
 tables:
   evaluation_log: "workspace.ml_credit_risk.model_evaluation_log"
   best_model_metadata: "workspace.ml_credit_risk.best_model_metadata"
@@ -131,7 +131,7 @@ tables:
   feature_importance: "workspace.ml_credit_risk.feature_importance_log"
   model_comparison: "workspace.ml_credit_risk.model_comparison_summary"
 
- # MODEL REGISTRY WORKFLOW
+# MODEL REGISTRY WORKFLOW
 workflow:
   training:
     enabled: true
@@ -146,8 +146,7 @@ workflow:
     compare_with_previous: true
 
   registration:
-    strategy: "always"   # <-- CHANGED (matches new logic)
-
+    strategy: "always"
     smart_rules:
       skip_duplicates: true
       respect_thresholds: false
@@ -161,7 +160,7 @@ workflow:
       feature_names: true
 
   best_model_selection:
-    enabled: false   # <-- CHANGED (disabled auto-best model logic)
+    enabled: false
 
 # UAT CONFIGURATION
 uat:
@@ -199,6 +198,21 @@ logging:
     learning_curves: false
     residual_plots: false
 
+# **🚀 SERVING ENDPOINT CONFIGURATION (ADDED SECTION)**
+serving:
+  workload_size: "Small"
+  workload_type: "CPU"
+  scale_to_zero_enabled: true
+  min_provisioned_throughput: 0
+  max_provisioned_throughput: 0
+
+  deployment_timeout: 1800
+  status_check_interval: 15
+
+  environment_vars:
+    ENVIRONMENT: "production"
+    LOG_LEVEL: "info"
+
 # DEPLOYMENT ALIASES
 aliases:
   staging: "Staging"
@@ -217,7 +231,7 @@ aliases:
 
     best:
       condition: "best_primary_metric"
-      auto_assign: false   # <-- CHANGED (consistent with new behavior)
+      auto_assign: false
 
 # NOTIFICATION SETTINGS
 notifications:
@@ -238,7 +252,7 @@ notifications:
     slack: []
     teams: []
 
-# EXPERIMENT COMPARISON SETTINGS
+# EXPERIMENT COMPARISON
 comparison:
   enabled: true
   comparison_scope: "model_type"

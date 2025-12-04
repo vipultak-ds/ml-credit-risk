@@ -1,9 +1,18 @@
+# Databricks and MLflow
+databricks-cli>=0.18.0
+databricks-sdk>=0.12.0
+mlflow>=2.9.0
+
+# Code Quality
+black>=23.0.0
+flake8>=6.0.0
+pytest>=7.4.0
+
 # Core ML Libraries
 pandas==2.0.3
 numpy==1.24.3
 scikit-learn==1.3.0
-xgboost==1.7.6
-
+ 
 # MLflow
 mlflow==2.8.1
 
