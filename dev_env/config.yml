@@ -1,7 +1,5 @@
 # 🎯 RANDOM FOREST EXPERIMENTS CONFIGURATION
-# Multiple hyperparameter configurations for model training
-# File: experiments.yml (separate from pipeline_config.yml)
-
+ 
 experiments:
   
   # BASELINE - Balanced Configuration

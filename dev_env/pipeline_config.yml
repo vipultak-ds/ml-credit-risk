@@ -38,7 +38,7 @@ registry:
 # METRICS CONFIGURATION
 metrics:
   classification:
-    primary_metric: "test_f1"
+    primary_metric: "test_recall"
     direction: "maximize"
 
     tracked_metrics:
