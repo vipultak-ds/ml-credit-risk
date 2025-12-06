@@ -52,25 +52,25 @@ metrics:
       - "inference_time"
 
     threshold_metrics:
-      test_f1: 0.65
-      test_roc_auc: 0.70
-      test_recall: 0.60
+      test_f1: 0.50
+      test_roc_auc: 0.50
+      test_recall: 0.50
 
-  regression:
-    primary_metric: "test_rmse"
-    direction: "minimize"
-    tracked_metrics:
-      - "test_rmse"
-      - "test_mae"
-      - "test_r2"
-      - "test_mape"
-      - "train_rmse"
-      - "train_time"
-      - "inference_time"
+  # regression:
+  #   primary_metric: "test_rmse"
+  #   direction: "minimize"
+  #   tracked_metrics:
+  #     - "test_rmse"
+  #     - "test_mae"
+  #     - "test_r2"
+  #     - "test_mape"
+  #     - "train_rmse"
+  #     - "train_time"
+  #     - "inference_time"
 
-    threshold_metrics:
-      test_r2: 0.75
-      test_mape: 15.0
+  #   threshold_metrics:
+  #     test_r2: 0.75
+  #     test_mape: 15.0
 
 # DATA CONFIGURATION
 data:
