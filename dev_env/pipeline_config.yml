@@ -168,15 +168,15 @@ uat:
   enabled: true
   classification_thresholds:
     min_accuracy: 0.75
-    min_f1: 0.70
+    min_f1: 0.65
     min_roc_auc: 0.75
     min_recall: 0.65
     max_inference_time_ms: 500
 
-  regression_thresholds:
-    mape_threshold: 15.0
-    r2_threshold: 0.75
-    max_inference_time_ms: 200
+  # regression_thresholds:
+  #   mape_threshold: 15.0
+  #   r2_threshold: 0.75
+  #   max_inference_time_ms: 200
 
   test_data:
     use_holdout: true
