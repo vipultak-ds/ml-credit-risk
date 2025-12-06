@@ -126,6 +126,7 @@ preprocessing:
 # MODEL EVALUATION TABLES
 tables:
   evaluation_log: "workspace.ml_credit_risk.model_evaluation_log"
+  registration_log: "workspace.ml_credit_risk.model_registration_log"
   best_model_metadata: "workspace.ml_credit_risk.best_model_metadata"
   uat_results: "workspace.ml_credit_risk.uat_inference_results"
   feature_importance: "workspace.ml_credit_risk.feature_importance_log"
