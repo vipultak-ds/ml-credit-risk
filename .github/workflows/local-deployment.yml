@@ -211,16 +211,19 @@ jobs:
         run: |
           echo "📦 Creating deployment package..."
           
-          # Start with required files
-          tar -czf mlops-deployment-${{ github.run_number }}.tar.gz deployment/ requirements*.txt
+          # Build list of files to include
+          FILES_TO_PACKAGE="deployment/ requirements*.txt"
           
-          # Check if README exists and add it separately if needed
+          # Check if README exists and add to list
           if [ -f "README.md" ]; then
-            echo "✅ README.md found, adding to package"
-            tar -rzf mlops-deployment-${{ github.run_number }}.tar.gz README.md
+            FILES_TO_PACKAGE="$FILES_TO_PACKAGE README.md"
+            echo "✅ README.md found, will include in package"
           else
             echo "⚠️ README.md not found in root, skipping"
           fi
+          
+          # Create the package with all files at once
+          tar -czf mlops-deployment-${{ github.run_number }}.tar.gz $FILES_TO_PACKAGE
           
           echo "✅ Package created successfully"
           ls -lh mlops-deployment-${{ github.run_number }}.tar.gz
