@@ -3,7 +3,16 @@ name: Databricks MLOps CI/CD
 on:
   push:
     branches:
-      - main  # Runs when code is pushed to main
+      - main
+    paths:
+      - "dev_env/**"
+      - "prod_env/**"
+      - "uat_env/**"
+      - "scripts/**"
+      - "pipeline_config.yml"
+      - "config.yml"
+      - "requirements.txt"
+      - ".github/workflows/ci-cd-pipeline.yml"
 
 env:
   DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
@@ -85,5 +94,3 @@ jobs:
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-    

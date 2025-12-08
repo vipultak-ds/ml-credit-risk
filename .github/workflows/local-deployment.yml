@@ -1,13 +1,7 @@
 name: Local MLOps Deployment
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - 'deployment/**'
-      - '.github/workflows/local-deployment.yml'
+  workflow_dispatch:   # <<< अब सिर्फ manual trigger
 
 env:
   PYTHON_VERSION: '3.10'
@@ -16,7 +10,6 @@ jobs:
   pull-model:
     name: Pull Production Model
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
