@@ -39,8 +39,7 @@ jobs:
 
       - name: Setup Model (Endpoint or Download)
         run: |
-          cd deployment
-          python pull_production_model.py
+          python deployment/pull_production_model.py
 
       - name: Verify Model Setup
         run: |
