@@ -1,14 +1,14 @@
 name: Local MLOps Deployment
 
 on:
-  workflow_dispatch:   # <<< अब सिर्फ manual trigger
+  workflow_dispatch:   # Manual trigger only
 
 env:
   PYTHON_VERSION: '3.10'
 
 jobs:
-  pull-model:
-    name: Pull Production Model
+  setup-model:
+    name: Setup Production Model
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -31,19 +31,29 @@ jobs:
           echo "DATABRICKS_TOKEN=${{ secrets.DATABRICKS_TOKEN }}" >> .env
           echo "MODEL_NAME=workspace.ml_credit_risk.credit_risk_model_random_forest" >> .env
           echo "MODEL_ALIAS=Production" >> .env
+          echo "USE_SERVING_ENDPOINT=true" >> .env
+          echo "SERVING_ENDPOINT_NAME=credit-risk-model-random-forest-prod" >> .env
 
-      - name: Pull Production Model
+      - name: Setup Model (Endpoint or Download)
         run: |
           python deployment/pull_production_model.py
       
-      - name: Verify Model Artifacts
+      - name: Verify Model Setup
         run: |
           ls -la deployment/
-          if [ ! -d "deployment/models/production_model" ]; then
-            echo "❌ Model directory not found"
+          
+          # Check if endpoint config exists (preferred)
+          if [ -f "deployment/models/endpoint_config.json" ]; then
+            echo "✅ Serving endpoint configured"
+            cat deployment/models/endpoint_config.json
+          # Or check if local model exists (fallback)
+          elif [ -d "deployment/models/production_model" ]; then
+            echo "✅ Local model downloaded"
+            ls -la deployment/models/production_model/
+          else
+            echo "❌ Neither endpoint config nor model found"
             exit 1
           fi
-          echo "✅ Model artifacts verified"
       
       - name: Upload Model Artifacts
         uses: actions/upload-artifact@v4
@@ -56,7 +66,7 @@ jobs:
   test-api:
     name: Test API Service
     runs-on: ubuntu-latest
-    needs: pull-model
+    needs: setup-model
     
     steps:
       - name: Checkout Repository
@@ -85,6 +95,25 @@ jobs:
           echo "DATABRICKS_TOKEN=${{ secrets.DATABRICKS_TOKEN }}" >> .env
           echo "MODEL_NAME=workspace.ml_credit_risk.credit_risk_model_random_forest" >> .env
           echo "MODEL_ALIAS=Production" >> .env
+          echo "USE_SERVING_ENDPOINT=true" >> .env
+          echo "SERVING_ENDPOINT_NAME=credit-risk-model-random-forest-prod" >> .env
+      
+      - name: Check Model Configuration
+        run: |
+          echo "📋 Checking model configuration..."
+          
+          if [ -f "deployment/models/endpoint_config.json" ]; then
+            echo "✅ Using Databricks Serving Endpoint"
+            echo "Endpoint Configuration:"
+            cat deployment/models/endpoint_config.json | python -m json.tool
+          elif [ -d "deployment/models/production_model" ]; then
+            echo "✅ Using Local Model"
+            echo "Model Files:"
+            ls -la deployment/models/production_model/
+          else
+            echo "❌ No model configuration found"
+            exit 1
+          fi
       
       - name: Start API Service
         run: |
@@ -111,8 +140,19 @@ jobs:
           done
           
           echo "❌ API health check failed"
+          echo "API Logs:"
           cat api.log
           exit 1
+      
+      - name: Test Health Endpoint
+        run: |
+          echo "Testing /health endpoint..."
+          curl -f http://localhost:8000/health | python -m json.tool
+      
+      - name: Test Model Info Endpoint
+        run: |
+          echo "Testing /model/info endpoint..."
+          curl -f http://localhost:8000/model/info | python -m json.tool
       
       - name: Run API Tests
         run: |
@@ -127,7 +167,7 @@ jobs:
           fi
       
       - name: Upload API Logs
-        if: failure()
+        if: always()
         uses: actions/upload-artifact@v3
         with:
           name: api-logs
@@ -149,30 +189,166 @@ jobs:
           name: production-model
           path: deployment/models/
       
+      - name: Package Configuration Summary
+        run: |
+          echo "📦 Deployment Package Contents:"
+          echo "================================"
+          
+          if [ -f "deployment/models/endpoint_config.json" ]; then
+            echo "✅ Serving Endpoint Configuration"
+            echo "   Mode: Remote Serving Endpoint"
+            echo "   Endpoint: credit-risk-model-random-forest-prod"
+          fi
+          
+          if [ -d "deployment/models/production_model" ]; then
+            echo "✅ Local Model Files"
+            echo "   Mode: Local Model Inference"
+          fi
+          
+          if [ -f "deployment/models/model_metadata.json" ]; then
+            echo "✅ Model Metadata"
+            cat deployment/models/model_metadata.json | python -m json.tool
+          fi
+          
+          echo ""
+          echo "Package Structure:"
+          tree deployment/ || ls -laR deployment/
+      
       - name: Create Deployment Package
         run: |
-          tar -czf mlops-deployment-${{ github.run_number }}.tar.gz deployment
+          # Create a comprehensive deployment package
+          tar -czf mlops-deployment-${{ github.run_number }}.tar.gz \
+            deployment/ \
+            requirements.txt \
+            requirements-deploy.txt \
+            README.md
           
+          echo "📦 Package created: mlops-deployment-${{ github.run_number }}.tar.gz"
+          ls -lh mlops-deployment-${{ github.run_number }}.tar.gz
+      
+      - name: Generate Deployment Instructions
+        run: |
+          cat > deployment-instructions.md << 'EOF'
+          # 🚀 Deployment Instructions
+          
+          ## Package Contents
+          - API Application (`deployment/app.py`)
+          - Model Configuration (`deployment/models/`)
+          - Dependencies (`requirements.txt`)
+          
+          ## Deployment Mode
+          
+          ### If Using Serving Endpoint (Recommended):
+          1. Extract package: `tar -xzf mlops-deployment-*.tar.gz`
+          2. Configure `.env`:
+             ```
+             DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+             DATABRICKS_TOKEN=your-token
+             USE_SERVING_ENDPOINT=true
+             SERVING_ENDPOINT_NAME=credit-risk-model-random-forest-prod
+             ```
+          3. Install dependencies: `pip install -r requirements.txt`
+          4. Start API: `python deployment/app.py`
+          
+          ### If Using Local Model:
+          1. Extract package: `tar -xzf mlops-deployment-*.tar.gz`
+          2. Configure `.env`:
+             ```
+             DATABRICKS_HOST=https://your-workspace.cloud.databricks.com
+             DATABRICKS_TOKEN=your-token
+             USE_SERVING_ENDPOINT=false
+             ```
+          3. Ensure model files exist in `deployment/models/production_model/`
+          4. Install dependencies: `pip install -r requirements.txt`
+          5. Start API: `python deployment/app.py`
+          
+          ## Testing
+          - Health: `curl http://localhost:8000/health`
+          - Model Info: `curl http://localhost:8000/model/info`
+          - Predict: `curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" -d @sample_request.json`
+          
+          ## Support
+          - Check logs in `deployment/api.log`
+          - Verify endpoint status in Databricks console
+          - Contact MLOps team for issues
+          EOF
+          
+          cat deployment-instructions.md
+      
       - name: Upload Deployment Archive
         uses: actions/upload-artifact@v3
         with:
           name: deployment-package
-          path: mlops-deployment-${{ github.run_number }}.tar.gz
+          path: |
+            mlops-deployment-${{ github.run_number }}.tar.gz
+            deployment-instructions.md
           retention-days: 30
 
 
   notify:
     name: Send Notification
     runs-on: ubuntu-latest
-    needs: [pull-model, test-api, build-package]
+    needs: [setup-model, test-api, build-package]
     if: always()
     
     steps:
+      - name: Determine Deployment Mode
+        id: mode
+        run: |
+          # This would need to check the artifacts, but for simplicity:
+          echo "mode=Serving Endpoint" >> $GITHUB_OUTPUT
+      
       - name: Notify Success
         if: needs.build-package.result == 'success'
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          payload: '{"text":":white_check_mark: Deployment Successful"}'
+          payload: |
+            {
+              "text": ":white_check_mark: *MLOps Deployment Successful*",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "✅ Deployment Completed"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Run Number:*\n${{ github.run_number }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Mode:*\nServing Endpoint"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Endpoint:*\ncredit-risk-model-random-forest-prod"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:*\nReady for Production"
+                    }
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Workflow"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
@@ -180,6 +356,51 @@ jobs:
         if: needs.build-package.result != 'success'
         uses: slackapi/slack-github-action@v1.24.0
         with:
-          payload: '{"text":":x: Deployment Failed — Check Logs"}'
+          payload: |
+            {
+              "text": ":x: *MLOps Deployment Failed*",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "❌ Deployment Failed"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Run Number:*\n${{ github.run_number }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Failed Job:*\n${{ needs.setup-model.result == 'failure' && 'Model Setup' || needs.test-api.result == 'failure' && 'API Tests' || 'Package Build' }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "Please check the workflow logs for details."
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "View Logs"
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

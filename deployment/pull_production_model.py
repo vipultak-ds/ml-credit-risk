@@ -1,5 +1,5 @@
 """
-📦 Pull Production Model from MLflow Registry
+📦 Pull Production Model from MLflow Registry OR Use Serving Endpoint
 """
 
 import mlflow
@@ -12,12 +12,15 @@ from dotenv import load_dotenv
 import shutil
 import tempfile
 from pathlib import Path
+import requests
+import pickle
+import yaml
 
 # Load environment variables
 load_dotenv()
 
 print("="*70)
-print("📦 PULLING PRODUCTION MODEL FROM MLFLOW REGISTRY")
+print("📦 PRODUCTION MODEL SETUP")
 print("="*70)
 
 # CONFIGURATION
@@ -49,11 +52,16 @@ class Config:
         "workspace.ml_credit_risk.credit_risk_model_random_forest"
     )
     MODEL_ALIAS = os.getenv("MODEL_ALIAS", "Production")
+    
+    # Serving endpoint configuration
+    USE_SERVING_ENDPOINT = os.getenv("USE_SERVING_ENDPOINT", "true").lower() == "true"
+    SERVING_ENDPOINT_NAME = os.getenv("SERVING_ENDPOINT_NAME", "credit-risk-model-random-forest-prod")
 
     # Local paths
     LOCAL_MODEL_DIR = "models"
     LOCAL_MODEL_PATH = os.path.join(LOCAL_MODEL_DIR, "production_model")
     METADATA_FILE = os.path.join(LOCAL_MODEL_DIR, "model_metadata.json")
+    ENDPOINT_CONFIG_FILE = os.path.join(LOCAL_MODEL_DIR, "endpoint_config.json")
 
 config = Config()
 
@@ -82,7 +90,7 @@ def initialize_mlflow():
         print(f"\n🔧 MLflow Configuration:")
         print(f"   Tracking URI: databricks")
         print(f"   Registry URI: databricks-uc")
-        print(f"   Host: {config.DATABRICKS_HOST}")
+        print(f"   Host: {config.DATABRICKS_HOST[:30]}***")
 
         return MlflowClient()
 
@@ -137,189 +145,292 @@ def get_production_model_info(client):
         print(f"❌ Failed to fetch model info: {e}")
         sys.exit(1)
 
-# MODEL DOWNLOAD
+# SERVING ENDPOINT CHECK
 
-def download_model(model_info):
-    """Download model from MLflow Registry with multiple fallback methods"""
+def check_serving_endpoint():
+    """Check if serving endpoint exists and is ready"""
+    try:
+        print(f"\n🔍 Checking serving endpoint...")
+        print(f"   Endpoint: {config.SERVING_ENDPOINT_NAME}")
+        
+        headers = {
+            "Authorization": f"Bearer {config.DATABRICKS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        url = f"{config.DATABRICKS_HOST}/api/2.0/serving-endpoints/{config.SERVING_ENDPOINT_NAME}"
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code == 200:
+            endpoint_info = response.json()
+            state = endpoint_info.get("state", {})
+            
+            print(f"   Status: {state.get('ready', 'Unknown')}")
+            print(f"   Config Update: {state.get('config_update', 'Unknown')}")
+            
+            is_ready = "READY" in str(state.get('ready', ''))
+            
+            if is_ready:
+                print(f"✅ Serving endpoint is READY")
+                return True, endpoint_info
+            else:
+                print(f"⚠️  Serving endpoint exists but not ready")
+                return False, endpoint_info
+        else:
+            print(f"⚠️  Serving endpoint not found (Status: {response.status_code})")
+            return False, None
+            
+    except Exception as e:
+        print(f"⚠️  Failed to check serving endpoint: {e}")
+        return False, None
+
+# TEST SERVING ENDPOINT
+
+def test_serving_endpoint(endpoint_info):
+    """Test serving endpoint with sample data"""
+    try:
+        print(f"\n🧪 Testing serving endpoint...")
+        
+        headers = {
+            "Authorization": f"Bearer {config.DATABRICKS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        # Sample test data
+        test_data = {
+            "dataframe_records": [
+                {
+                    "checking_balance": "< 0 DM",
+                    "months_loan_duration": 6,
+                    "credit_history": "critical",
+                    "purpose": "radio/tv",
+                    "amount": 1169,
+                    "savings_balance": "unknown",
+                    "employment_duration": "< 1 year",
+                    "percent_of_income": 4,
+                    "years_at_residence": 4,
+                    "age": 67,
+                    "other_credit": "none",
+                    "housing": "own",
+                    "existing_loans_count": 2,
+                    "job": "skilled",
+                    "dependents": 1,
+                    "phone": "yes"
+                }
+            ]
+        }
+        
+        url = f"{config.DATABRICKS_HOST}/serving-endpoints/{config.SERVING_ENDPOINT_NAME}/invocations"
+        response = requests.post(url, headers=headers, json=test_data, timeout=30)
+        
+        if response.status_code == 200:
+            predictions = response.json()
+            print(f"✅ Endpoint test successful!")
+            print(f"   Sample prediction: {predictions.get('predictions', ['N/A'])[0]}")
+            return True
+        else:
+            print(f"⚠️  Endpoint test failed (Status: {response.status_code})")
+            print(f"   Response: {response.text[:200]}")
+            return False
+            
+    except Exception as e:
+        print(f"⚠️  Endpoint test failed: {e}")
+        return False
+
+# SAVE ENDPOINT CONFIGURATION
+
+def save_endpoint_config(model_info, endpoint_info):
+    """Save endpoint configuration for API to use"""
     try:
         os.makedirs(config.LOCAL_MODEL_DIR, exist_ok=True)
-
-        if os.path.exists(config.LOCAL_MODEL_PATH):
-            print(f"\n🗑️  Removing existing model...")
-            shutil.rmtree(config.LOCAL_MODEL_PATH)
-
-        model_uri = f"models:/{config.MODEL_NAME}@{config.MODEL_ALIAS}"
-        run_uri = f"runs:/{model_info['run_id']}/model"
-
-        print(f"\n📥 Downloading model...")
-        print(f"   Source: {model_uri}")
-        print(f"   Destination: {config.LOCAL_MODEL_PATH}")
-        print(f"   Note: Using Databricks API (not direct S3 access)")
-
-        # Method 1: Try downloading from run artifacts (bypasses S3 bucket location check)
-        try:
-            print(f"\n   🔄 Method 1: Downloading from run artifacts...")
-            
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_path = Path(temp_dir) / "model"
-                
-                # Download from run instead of model registry
-                mlflow.artifacts.download_artifacts(
-                    artifact_uri=run_uri,
-                    dst_path=str(temp_path)
-                )
-                
-                # Move to final destination
-                if (temp_path / "model").exists():
-                    shutil.move(str(temp_path / "model"), config.LOCAL_MODEL_PATH)
-                else:
-                    shutil.move(str(temp_path), config.LOCAL_MODEL_PATH)
-                
-            print(f"   ✅ Method 1 successful")
-            print(f"✅ Model downloaded successfully")
-            save_metadata(model_info)
-            return True
-            
-        except Exception as e1:
-            print(f"   ⚠️  Method 1 failed: {str(e1)}")
-            
-            # Method 2: Load model and re-save locally
-            try:
-                print(f"\n   🔄 Method 2: Load and re-save model...")
-                
-                # Load model using pyfunc
-                model = mlflow.pyfunc.load_model(model_uri)
-                
-                # Get the underlying sklearn model
-                if hasattr(model, '_model_impl'):
-                    sklearn_model = model._model_impl.python_model
-                else:
-                    sklearn_model = model
-                
-                # Save as MLflow model locally
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_model_path = Path(temp_dir) / "temp_model"
-                    
-                    mlflow.sklearn.save_model(
-                        sklearn_model,
-                        str(temp_model_path)
-                    )
-                    
-                    # Move to final destination
-                    shutil.move(str(temp_model_path), config.LOCAL_MODEL_PATH)
-                
-                print(f"   ✅ Method 2 successful")
-                print(f"✅ Model downloaded successfully")
-                save_metadata(model_info)
-                return True
-                
-            except Exception as e2:
-                print(f"   ⚠️  Method 2 failed: {str(e2)}")
-                
-                # Method 3: Original method as last resort
-                try:
-                    print(f"\n   🔄 Method 3: Direct artifact download...")
-                    
-                    mlflow.artifacts.download_artifacts(
-                        artifact_uri=model_uri,
-                        dst_path=config.LOCAL_MODEL_PATH
-                    )
-                    
-                    print(f"   ✅ Method 3 successful")
-                    print(f"✅ Model downloaded successfully")
-                    save_metadata(model_info)
-                    return True
-                    
-                except Exception as e3:
-                    print(f"   ❌ Method 3 failed: {str(e3)}")
-                    raise Exception(f"All download methods failed. Last error: {str(e3)}")
-
-    except Exception as e:
-        print(f"❌ Model download failed: {e}")
-        return False
-
-# METADATA MANAGEMENT
-
-def save_metadata(model_info):
-    try:
+        
+        endpoint_config = {
+            "use_serving_endpoint": True,
+            "endpoint_name": config.SERVING_ENDPOINT_NAME,
+            "endpoint_url": f"{config.DATABRICKS_HOST}/serving-endpoints/{config.SERVING_ENDPOINT_NAME}/invocations",
+            "model_info": model_info,
+            "endpoint_state": endpoint_info.get("state") if endpoint_info else None,
+            "config_version": endpoint_info.get("config", {}).get("config_version") if endpoint_info else None,
+            "created_at": datetime.now().isoformat()
+        }
+        
+        with open(config.ENDPOINT_CONFIG_FILE, 'w') as f:
+            json.dump(endpoint_config, f, indent=2)
+        
+        print(f"\n✅ Endpoint configuration saved: {config.ENDPOINT_CONFIG_FILE}")
+        
+        # Also save metadata
+        model_info['use_serving_endpoint'] = True
+        model_info['serving_endpoint_name'] = config.SERVING_ENDPOINT_NAME
+        
         with open(config.METADATA_FILE, 'w') as f:
             json.dump(model_info, f, indent=2)
-
+        
         print(f"✅ Metadata saved: {config.METADATA_FILE}")
-
-    except Exception as e:
-        print(f"⚠️  Failed to save metadata: {e}")
-
-# VERIFICATION
-
-def verify_download():
-    try:
-        print(f"\n🔍 Verifying download...")
-
-        if not os.path.exists(config.LOCAL_MODEL_PATH):
-            print(f"❌ Model directory not found: {config.LOCAL_MODEL_PATH}")
-            return False
-
-        model_files = os.listdir(config.LOCAL_MODEL_PATH)
-        print(f"   Found {len(model_files)} artifacts")
-
-        if os.path.exists(config.METADATA_FILE):
-            with open(config.METADATA_FILE, 'r') as f:
-                metadata = json.load(f)
-            print(f"   Model version: v{metadata['version']}")
-
-        print(f"✅ Verification passed")
+        
         return True
-
+        
     except Exception as e:
-        print(f"❌ Verification failed: {e}")
+        print(f"⚠️  Failed to save endpoint config: {e}")
         return False
 
-# TEST MODEL LOADING
+# DATABRICKS REST API METHOD (Fallback)
 
-def test_model_load():
+def download_via_rest_api(model_info):
+    """Download model artifacts using Databricks REST API"""
     try:
-        print(f"\n🧪 Testing model load...")
-
-        model = mlflow.pyfunc.load_model(config.LOCAL_MODEL_PATH)
-
-        print(f"✅ Model loaded successfully")
-        print(f"   Model type: {type(model)}")
-
+        print(f"\n   🔄 Attempting to download model via REST API...")
+        
+        headers = {
+            "Authorization": f"Bearer {config.DATABRICKS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        
+        # Get artifact list from run
+        list_url = f"{config.DATABRICKS_HOST}/api/2.0/mlflow/artifacts/list"
+        list_params = {
+            "run_id": model_info['run_id'],
+            "path": "model"
+        }
+        
+        response = requests.get(list_url, headers=headers, params=list_params)
+        response.raise_for_status()
+        
+        artifacts = response.json().get('files', [])
+        print(f"   📁 Found {len(artifacts)} artifact files")
+        
+        if not artifacts:
+            raise Exception("No artifacts found in model path")
+        
+        # Create local directory structure
+        os.makedirs(config.LOCAL_MODEL_PATH, exist_ok=True)
+        
+        # Download each artifact
+        download_count = 0
+        for artifact in artifacts:
+            artifact_path = artifact['path']
+            is_dir = artifact.get('is_dir', False)
+            
+            if is_dir:
+                # Create directory
+                local_dir = os.path.join(config.LOCAL_MODEL_PATH, 
+                                        artifact_path.replace('model/', ''))
+                os.makedirs(local_dir, exist_ok=True)
+            else:
+                # Download file
+                file_url = f"{config.DATABRICKS_HOST}/api/2.0/mlflow/artifacts/get"
+                file_params = {
+                    "run_id": model_info['run_id'],
+                    "path": artifact_path
+                }
+                
+                file_response = requests.get(file_url, headers=headers, params=file_params)
+                file_response.raise_for_status()
+                
+                # Save file
+                local_file = os.path.join(config.LOCAL_MODEL_PATH,
+                                         artifact_path.replace('model/', ''))
+                os.makedirs(os.path.dirname(local_file), exist_ok=True)
+                
+                with open(local_file, 'wb') as f:
+                    f.write(file_response.content)
+                
+                download_count += 1
+        
+        print(f"   ✅ Downloaded {download_count} files via REST API")
         return True
-
+        
     except Exception as e:
-        print(f"⚠️  Model load test failed: {e}")
+        print(f"   ⚠️  REST API download failed: {str(e)}")
         return False
 
-# MAIN EXECUTION
+# MAIN SETUP LOGIC
 
 def main():
+    """Main setup logic - prefer serving endpoint over local model"""
+    
     validate_credentials()
     client = initialize_mlflow()
     model_info = get_production_model_info(client)
-    success = download_model(model_info)
-
-    if not success:
-        print("\n❌ Model pull FAILED")
-        sys.exit(1)
-
-    verify_download()
-    test_model_load()
-
-    print("\n" + "="*70)
-    print("✅ MODEL PULL COMPLETED SUCCESSFULLY")
-    print("="*70)
-    print(f"\n📦 Model Details:")
-    print(f"   Name: {config.MODEL_NAME}")
-    print(f"   Version: v{model_info['version']}")
-    print(f"   Alias: @{config.MODEL_ALIAS}")
-    print(f"   Location: {config.LOCAL_MODEL_PATH}")
-    print(f"\n📋 Next Steps:")
-    print(f"   1. Start API: python app.py")
-    print(f"   2. Test API: curl http://localhost:8000/health")
-    print(f"   3. View docs: http://localhost:8000/docs")
-    print("="*70)
+    
+    # Check if we should use serving endpoint
+    if config.USE_SERVING_ENDPOINT:
+        print(f"\n{'='*70}")
+        print(f"🚀 USING DATABRICKS SERVING ENDPOINT (Recommended)")
+        print(f"{'='*70}")
+        
+        endpoint_ready, endpoint_info = check_serving_endpoint()
+        
+        if endpoint_ready:
+            # Test the endpoint
+            test_success = test_serving_endpoint(endpoint_info)
+            
+            # Save endpoint configuration
+            save_endpoint_config(model_info, endpoint_info)
+            
+            print(f"\n{'='*70}")
+            print(f"✅ SERVING ENDPOINT SETUP COMPLETED")
+            print(f"{'='*70}")
+            print(f"\n📦 Configuration:")
+            print(f"   Endpoint: {config.SERVING_ENDPOINT_NAME}")
+            print(f"   Model: {config.MODEL_NAME}")
+            print(f"   Version: v{model_info['version']}")
+            print(f"   Status: {'READY ✅' if test_success else 'READY (Test Failed ⚠️)'}")
+            print(f"\n📋 Next Steps:")
+            print(f"   1. Start API: python app.py")
+            print(f"   2. API will use serving endpoint automatically")
+            print(f"   3. Test API: curl http://localhost:8000/health")
+            print(f"   4. View docs: http://localhost:8000/docs")
+            print(f"{'='*70}")
+            
+            return True
+        else:
+            print(f"\n⚠️  Serving endpoint not ready, falling back to local download...")
+    
+    # Fallback: Try to download model locally
+    print(f"\n{'='*70}")
+    print(f"📥 DOWNLOADING MODEL LOCALLY (Fallback)")
+    print(f"{'='*70}")
+    
+    os.makedirs(config.LOCAL_MODEL_DIR, exist_ok=True)
+    
+    if os.path.exists(config.LOCAL_MODEL_PATH):
+        print(f"\n🗑️  Removing existing model...")
+        shutil.rmtree(config.LOCAL_MODEL_PATH)
+    
+    # Try REST API download
+    if download_via_rest_api(model_info):
+        print(f"\n✅ Model downloaded successfully via REST API")
+        
+        # Save metadata
+        model_info['use_serving_endpoint'] = False
+        with open(config.METADATA_FILE, 'w') as f:
+            json.dump(model_info, f, indent=2)
+        
+        print(f"\n{'='*70}")
+        print(f"✅ LOCAL MODEL SETUP COMPLETED")
+        print(f"{'='*70}")
+        print(f"\n📦 Model Details:")
+        print(f"   Name: {config.MODEL_NAME}")
+        print(f"   Version: v{model_info['version']}")
+        print(f"   Location: {config.LOCAL_MODEL_PATH}")
+        print(f"\n📋 Next Steps:")
+        print(f"   1. Start API: python app.py")
+        print(f"   2. Test API: curl http://localhost:8000/health")
+        print(f"   3. View docs: http://localhost:8000/docs")
+        print(f"{'='*70}")
+        
+        return True
+    
+    # If everything fails
+    print(f"\n❌ Both serving endpoint and local download failed")
+    print(f"\n💡 Recommendations:")
+    print(f"   1. Check if serving endpoint exists: {config.SERVING_ENDPOINT_NAME}")
+    print(f"   2. Verify AWS S3 permissions for model artifacts")
+    print(f"   3. Contact Databricks admin for access")
+    
+    return False
 
 if __name__ == "__main__":
-    main()
+    success = main()
+    sys.exit(0 if success else 1)
