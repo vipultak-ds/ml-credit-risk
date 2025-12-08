@@ -1,0 +1,192 @@
+name: Local MLOps Deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'deployment/**'
+      - '.github/workflows/local-deployment.yml'
+
+env:
+  PYTHON_VERSION: '3.10'
+
+jobs:
+  pull-model:
+    name: Pull Production Model
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Create .env file
+        run: |
+          echo "DATABRICKS_HOST=${{ secrets.DATABRICKS_HOST }}" >> .env
+          echo "DATABRICKS_TOKEN=${{ secrets.DATABRICKS_TOKEN }}" >> .env
+          echo "MODEL_NAME=workspace.ml_credit_risk.credit_risk_model_random_forest" >> .env
+          echo "MODEL_ALIAS=Production" >> .env
+
+      - name: Pull Production Model
+        run: |
+          python deployment/pull_production_model.py
+      
+      - name: Verify Model Artifacts
+        run: |
+          ls -la deployment/
+          if [ ! -d "deployment/models/production_model" ]; then
+            echo "❌ Model directory not found"
+            exit 1
+          fi
+          echo "✅ Model artifacts verified"
+      
+      - name: Upload Model Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: production-model
+          path: deployment/models/
+          retention-days: 7
+
+
+  test-api:
+    name: Test API Service
+    runs-on: ubuntu-latest
+    needs: pull-model
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Download Model Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: production-model
+          path: deployment/models/
+      
+      - name: Create .env file
+        run: |
+          echo "DATABRICKS_HOST=${{ secrets.DATABRICKS_HOST }}" >> .env
+          echo "DATABRICKS_TOKEN=${{ secrets.DATABRICKS_TOKEN }}" >> .env
+          echo "MODEL_NAME=workspace.ml_credit_risk.credit_risk_model_random_forest" >> .env
+          echo "MODEL_ALIAS=Production" >> .env
+      
+      - name: Start API Service
+        run: |
+          cd deployment
+          nohup python app.py > api.log 2>&1 &
+          echo $! > api.pid
+          sleep 10
+      
+      - name: Check API Health
+        run: |
+          cd deployment
+          MAX_RETRIES=5
+          RETRY=0
+          
+          while [ $RETRY -lt $MAX_RETRIES ]; do
+            if curl -f http://localhost:8000/health; then
+              echo "✅ API is healthy"
+              exit 0
+            fi
+            
+            RETRY=$((RETRY+1))
+            echo "⏳ Waiting for API... (Attempt $RETRY/$MAX_RETRIES)"
+            sleep 5
+          done
+          
+          echo "❌ API health check failed"
+          cat api.log
+          exit 1
+      
+      - name: Run API Tests
+        run: |
+          python deployment/test_api.py
+      
+      - name: Stop API Service
+        if: always()
+        run: |
+          cd deployment
+          if [ -f api.pid ]; then
+            kill $(cat api.pid) || true
+          fi
+      
+      - name: Upload API Logs
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: api-logs
+          path: deployment/api.log
+
+
+  build-package:
+    name: Build Deployment Package
+    runs-on: ubuntu-latest
+    needs: test-api
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      
+      - name: Download Model Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: production-model
+          path: deployment/models/
+      
+      - name: Create Deployment Package
+        run: |
+          tar -czf mlops-deployment-${{ github.run_number }}.tar.gz deployment
+          
+      - name: Upload Deployment Archive
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-package
+          path: mlops-deployment-${{ github.run_number }}.tar.gz
+          retention-days: 30
+
+
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: [pull-model, test-api, build-package]
+    if: always()
+    
+    steps:
+      - name: Notify Success
+        if: needs.build-package.result == 'success'
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: '{"text":":white_check_mark: Deployment Successful"}'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Failure
+        if: needs.build-package.result != 'success'
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: '{"text":":x: Deployment Failed — Check Logs"}'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
