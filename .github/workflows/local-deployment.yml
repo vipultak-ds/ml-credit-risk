@@ -39,28 +39,19 @@ jobs:
 
       - name: Setup Model (Endpoint or Download)
         run: |
-          python deployment/pull_production_model.py
-      
+          cd deployment
+          python pull_production_model.py
+
       - name: Verify Model Setup
         run: |
-          echo "📂 Deployment directory:"
-          ls -la deployment/
-
-          echo "📂 Models directory:"
-          if [ -d "deployment/models" ]; then
-            ls -la deployment/models/
-          else
-            echo "⚠️ models folder missing"
-          fi
+          echo "📂 checking deployment/models ..."
+          ls -la deployment/models || echo "⚠️ models folder missing"
 
           if [ -f "deployment/models/endpoint_config.json" ]; then
             echo "✅ Serving endpoint configured"
             cat deployment/models/endpoint_config.json
-          elif [ -d "deployment/models/production_model" ]; then
-            echo "✅ Local model downloaded"
-            ls -la deployment/models/production_model/
           else
-            echo "❌ Neither endpoint config nor model found"
+            echo "❌ endpoint_config.json not found"
             exit 1
           fi
 
@@ -70,7 +61,6 @@ jobs:
           name: production-model
           path: deployment/models/
           retention-days: 7
-
 
   test-api:
     name: Test API Service
@@ -127,7 +117,7 @@ jobs:
       - name: Start API Service
         run: |
           cd deployment
-          nohup python app.py > api.log 2>&1 & 
+          nohup python app.py > api.log 2>&1 &
           echo $! > api.pid
           sleep 10
       
@@ -168,7 +158,6 @@ jobs:
           name: api-logs
           path: deployment/api.log
 
-
   build-package:
     name: Build Deployment Package
     runs-on: ubuntu-latest
@@ -199,7 +188,6 @@ jobs:
           name: deployment-package
           path: |
             mlops-deployment-${{ github.run_number }}.tar.gz
-
 
   notify:
     name: Notify
