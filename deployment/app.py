@@ -192,6 +192,16 @@ async def health():
     )
 
 
+@app.get("/model/info")
+async def model_info():
+    return {
+        "model_name": config.MODEL_NAME,
+        "model_version": str(model_loader.model_version),
+        "features": config.FEATURES,
+        "endpoint": "/predict"
+    }
+
+
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(input_data: CreditRiskInput):
     df = pd.DataFrame([input_data.dict()])[config.FEATURES]
@@ -206,6 +216,32 @@ async def predict(input_data: CreditRiskInput):
         risk_score=float(prob[1]),
         timestamp=datetime.now().isoformat(),
         model_version=str(model_loader.model_version)
+    )
+
+
+@app.post("/predict/batch", response_model=BatchPredictionResponse)
+async def batch_predict(batch_data: BatchCreditRiskInput):
+    df = pd.DataFrame([item.dict() for item in batch_data.inputs])[config.FEATURES]
+    
+    preds = model_loader.predict(df)
+    probs = model_loader.predict_proba(df)
+    
+    results = [
+        PredictionResponse(
+            prediction=int(pred),
+            prediction_label="High Risk" if pred == 1 else "Low Risk",
+            probability=float(probs[i][pred]),
+            risk_score=float(probs[i][1]),
+            timestamp=datetime.now().isoformat(),
+            model_version=str(model_loader.model_version)
+        )
+        for i, pred in enumerate(preds)
+    ]
+    
+    return BatchPredictionResponse(
+        predictions=results,
+        total_count=len(results),
+        timestamp=datetime.now().isoformat()
     )
 
 

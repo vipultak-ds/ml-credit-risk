@@ -135,7 +135,7 @@ jobs:
           cd deployment
           nohup python app.py > api.log 2>&1 &
           echo $! > api.pid
-          sleep 10
+          sleep 20
       
       - name: Check API Health
         run: |
