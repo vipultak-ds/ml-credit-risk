@@ -13,7 +13,7 @@ numpy==1.24.3
 scikit-learn==1.3.0
 
 # MLflow (with Databricks support)
-mlflow[databricks]==2.8.1
+mlflow-skinny[databricks]==2.8.1
 
 # API Framework
 fastapi==0.104.1
