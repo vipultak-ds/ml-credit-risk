@@ -32,7 +32,7 @@ jobs:
           echo "MODEL_NAME=workspace.ml_credit_risk.credit_risk_model_random_forest" >> .env
           echo "MODEL_ALIAS=Production" >> .env
           echo "USE_SERVING_ENDPOINT=true" >> .env
-          echo "SERVING_ENDPOINT_NAME=credit-risk-model-random-forest-prod" >> .env
+          echo "SERVING_ENDPOINT_NAME=credit-risk-model-random_forest-prod" >> .env
 
       - name: Setup Model (Endpoint or Download)
         run: |
