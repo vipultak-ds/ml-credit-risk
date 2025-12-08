@@ -32,7 +32,7 @@ SERVING_ENDPOINT_NAME = "credit-risk-model-random_forest-prod"
 DATABRICKS_HOST = os.getenv("DATABRICKS_HOST", "").rstrip("/")
 DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN", "")
 
-# Output paths
+# Output paths (🔥 FIXED PATH)
 LOCAL_MODEL_DIR = os.path.join("deployment", "models")
 ENDPOINT_CONFIG_FILE = os.path.join(LOCAL_MODEL_DIR, "endpoint_config.json")
 METADATA_FILE = os.path.join(LOCAL_MODEL_DIR, "model_metadata.json")
@@ -69,7 +69,9 @@ def fetch_model_metadata(client):
         "timestamp": datetime.now().isoformat()
     }
 
+    # 🔥 Ensure folder exists (Fix)
     os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
+
     with open(METADATA_FILE, "w") as f:
         json.dump(metadata, f, indent=2)
 
@@ -143,7 +145,9 @@ def save_endpoint_config(metadata):
         "saved_at": datetime.now().isoformat()
     }
 
+    # 🔥 Ensure folder exists before writing file
     os.makedirs(LOCAL_MODEL_DIR, exist_ok=True)
+
     with open(ENDPOINT_CONFIG_FILE, "w") as f:
         json.dump(data, f, indent=2)
 
