@@ -190,13 +190,12 @@ def test_serving_endpoint(endpoint_info):
     """Test serving endpoint with sample data"""
     try:
         print(f"\n🧪 Testing serving endpoint...")
-        
+
         headers = {
             "Authorization": f"Bearer {config.DATABRICKS_TOKEN}",
             "Content-Type": "application/json"
         }
-        
-        # Sample test data
+
         test_data = {
             "dataframe_records": [
                 {
@@ -219,22 +218,25 @@ def test_serving_endpoint(endpoint_info):
                 }
             ]
         }
-        
-        url = f"{config.DATABRICKS_HOST}/serving-endpoints/{config.SERVING_ENDPOINT_NAME}/invocations"
+
+        # FIXED URL
+        url = f"{config.DATABRICKS_HOST}/api/2.0/serving-endpoints/{config.SERVING_ENDPOINT_NAME}/invocations"
+        print(f"➡️ Calling endpoint: {url}")
+
         response = requests.post(url, headers=headers, json=test_data, timeout=30)
-        
+
         if response.status_code == 200:
             predictions = response.json()
             print(f"✅ Endpoint test successful!")
-            print(f"   Sample prediction: {predictions.get('predictions', ['N/A'])[0]}")
+            print(f"   Prediction: {predictions}")
             return True
         else:
-            print(f"⚠️  Endpoint test failed (Status: {response.status_code})")
-            print(f"   Response: {response.text[:200]}")
+            print(f"⚠️ Endpoint test failed ({response.status_code})")
+            print(response.text)
             return False
-            
+
     except Exception as e:
-        print(f"⚠️  Endpoint test failed: {e}")
+        print(f"❌ Error testing endpoint: {e}")
         return False
 
 # SAVE ENDPOINT CONFIGURATION
