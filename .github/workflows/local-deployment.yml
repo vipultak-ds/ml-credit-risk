@@ -97,7 +97,7 @@ jobs:
           ls -la deployment/
       
       - name: Download Model Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           name: production-model
           path: deployment/models/
@@ -110,7 +110,13 @@ jobs:
           echo "MODEL_ALIAS=Production" >> .env
           echo "USE_SERVING_ENDPOINT=true" >> .env
           echo "SERVING_ENDPOINT_NAME=credit-risk-model-random_forest-prod" >> .env
+          echo "API_HOST=0.0.0.0" >> .env
+          echo "API_PORT=8000" >> .env
           echo "🔎 Using SERVING_ENDPOINT_NAME=$(grep SERVING_ENDPOINT_NAME .env | cut -d'=' -f2)"
+          
+          # Copy .env to deployment directory for app.py
+          cp .env deployment/.env
+          
           cat .env
 
       - name: Check Model Configuration
@@ -135,7 +141,7 @@ jobs:
           cd deployment
           nohup python app.py > api.log 2>&1 &
           echo $! > api.pid
-          sleep 20
+          sleep 10
       
       - name: Check API Health
         run: |
@@ -169,7 +175,7 @@ jobs:
       
       - name: Upload Logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: api-logs
           path: deployment/api.log
@@ -188,7 +194,7 @@ jobs:
           mkdir -p deployment/models
       
       - name: Download Model Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           name: production-model
           path: deployment/models/
@@ -203,7 +209,7 @@ jobs:
           tar -czf mlops-deployment-${{ github.run_number }}.tar.gz deployment/ requirements*.txt README.md
 
       - name: Upload Deployment Package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: deployment-package
           path: |
