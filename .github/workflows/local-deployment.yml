@@ -53,7 +53,7 @@ jobs:
           echo "✅ Model artifacts verified"
       
       - name: Upload Model Artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: production-model
           path: deployment/models/
