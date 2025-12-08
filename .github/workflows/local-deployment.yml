@@ -43,8 +43,16 @@ jobs:
       
       - name: Verify Model Setup
         run: |
+          echo "📂 Deployment directory:"
           ls -la deployment/
-          
+
+          echo "📂 Models directory:"
+          if [ -d "deployment/models" ]; then
+            ls -la deployment/models/
+          else
+            echo "⚠️ models folder missing"
+          fi
+
           if [ -f "deployment/models/endpoint_config.json" ]; then
             echo "✅ Serving endpoint configured"
             cat deployment/models/endpoint_config.json
@@ -55,7 +63,7 @@ jobs:
             echo "❌ Neither endpoint config nor model found"
             exit 1
           fi
-          
+
       - name: Upload Model Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -119,7 +127,7 @@ jobs:
       - name: Start API Service
         run: |
           cd deployment
-          nohup python app.py > api.log 2>&1 &
+          nohup python app.py > api.log 2>&1 & 
           echo $! > api.pid
           sleep 10
       
