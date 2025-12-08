@@ -5,8 +5,6 @@ on:
 
 env:
   PYTHON_VERSION: '3.10'
-  SERVING_ENDPOINT_NAME: "credit-risk-model-random_forest-prod"   # <--- Correct
-
 
 jobs:
   setup-model:
@@ -35,7 +33,9 @@ jobs:
           echo "MODEL_NAME=workspace.ml_credit_risk.credit_risk_model_random_forest" >> .env
           echo "MODEL_ALIAS=Production" >> .env
           echo "USE_SERVING_ENDPOINT=true" >> .env
-          echo "SERVING_ENDPOINT_NAME=${{ env.SERVING_ENDPOINT_NAME }}" >> .env
+          echo "SERVING_ENDPOINT_NAME=credit-risk-model-random_forest-prod" >> .env
+          echo "🔎 Using SERVING_ENDPOINT_NAME=$(grep SERVING_ENDPOINT_NAME .env | cut -d'=' -f2)"
+          cat .env
 
       - name: Setup Model (Endpoint or Download)
         run: |
@@ -55,7 +55,7 @@ jobs:
             echo "❌ Neither endpoint config nor model found"
             exit 1
           fi
-      
+          
       - name: Upload Model Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -97,8 +97,10 @@ jobs:
           echo "MODEL_NAME=workspace.ml_credit_risk.credit_risk_model_random_forest" >> .env
           echo "MODEL_ALIAS=Production" >> .env
           echo "USE_SERVING_ENDPOINT=true" >> .env
-          echo "SERVING_ENDPOINT_NAME=${{ env.SERVING_ENDPOINT_NAME }}" >> .env
-      
+          echo "SERVING_ENDPOINT_NAME=credit-risk-model-random_forest-prod" >> .env
+          echo "🔎 Using SERVING_ENDPOINT_NAME=$(grep SERVING_ENDPOINT_NAME .env | cut -d'=' -f2)"
+          cat .env
+
       - name: Check Model Configuration
         run: |
           echo "📋 Checking model configuration..."
