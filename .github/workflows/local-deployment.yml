@@ -26,6 +26,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-deploy.txt
       
+      - name: Create Required Directories
+        run: |
+          echo "📁 Creating deployment directories..."
+          mkdir -p deployment/models
+          ls -la deployment/
+          echo "✅ Directories created"
+      
       - name: Create .env File
         run: |
           echo "DATABRICKS_HOST=${{ secrets.DATABRICKS_HOST }}" >> .env
@@ -51,6 +58,8 @@ jobs:
             cat deployment/models/endpoint_config.json
           else
             echo "❌ endpoint_config.json not found"
+            echo "📋 Current directory structure:"
+            find deployment -type f || echo "No files found"
             exit 1
           fi
 
@@ -81,6 +90,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
+      - name: Create Required Directories
+        run: |
+          echo "📁 Creating deployment directories..."
+          mkdir -p deployment/models
+          ls -la deployment/
+      
       - name: Download Model Artifacts
         uses: actions/download-artifact@v3
         with:
@@ -110,6 +125,8 @@ jobs:
             ls -la deployment/models/production_model/
           else
             echo "❌ No model configuration found"
+            echo "📋 Files in deployment/models:"
+            ls -la deployment/models/ || echo "Directory is empty"
             exit 1
           fi
       
@@ -165,6 +182,10 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+      
+      - name: Create Required Directories
+        run: |
+          mkdir -p deployment/models
       
       - name: Download Model Artifacts
         uses: actions/download-artifact@v3
