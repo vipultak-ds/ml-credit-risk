@@ -1,5 +1,8 @@
 # 🎯 RANDOM FOREST EXPERIMENTS CONFIGURATION
- 
+
+experiment:
+  name: "credit_risk_rf_experiment"   
+
 experiments:
   
   # BASELINE - Balanced Configuration
@@ -33,7 +36,7 @@ experiments:
       criterion: "gini"
       random_state: 42
       n_jobs: -1
- 
+
   # HIGH PRECISION - Minimize False Positives
 
   - name: "rf_high_precision"
@@ -49,7 +52,7 @@ experiments:
       criterion: "gini"
       random_state: 42
       n_jobs: -1
- 
+
   # DEEP ENSEMBLE - Complex Patterns
 
   - name: "rf_deep_ensemble"
@@ -65,7 +68,7 @@ experiments:
       criterion: "entropy"
       random_state: 42
       n_jobs: -1
- 
+
   # REGULARIZED - Prevent Overfitting
   
   - name: "rf_regularized"
@@ -82,7 +85,7 @@ experiments:
       max_leaf_nodes: 100
       random_state: 42
       n_jobs: -1
- 
+
   # PRODUCTION OPTIMIZED - Speed + Accuracy Balance
   
   - name: "rf_production"
@@ -100,7 +103,7 @@ experiments:
       n_jobs: -1
       warm_start: false
       oob_score: true
- 
+
   # EXTREME ENSEMBLE - Maximum Diversity
   
   - name: "rf_extreme_ensemble"
@@ -117,9 +120,9 @@ experiments:
       min_impurity_decrease: 0.0001
       random_state: 42
       n_jobs: -1
- 
+
   # COST-SENSITIVE - Custom Class Weights
- 
+
   - name: "rf_cost_sensitive"
     params:
       n_estimators: 250
@@ -133,9 +136,9 @@ experiments:
       criterion: "gini"
       random_state: 42
       n_jobs: -1
- 
+
   # LIGHTWEIGHT - Fast Inference
- 
+
   - name: "rf_lightweight"
     params:
       n_estimators: 100
@@ -150,9 +153,9 @@ experiments:
       max_leaf_nodes: 50
       random_state: 42
       n_jobs: -1
-  
+
   # EXPERIMENTAL - Grid Search Winner Approximation
- 
+
   - name: "rf_tuned_champion"
     params:
       n_estimators: 350
