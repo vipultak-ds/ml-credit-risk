@@ -199,21 +199,42 @@ jobs:
           name: production-model
           path: deployment/models/
       
-      - name: Package Summary
+      - name: Verify Files Before Packaging
         run: |
+          echo "📋 Files in current directory:"
+          ls -la
+          echo ""
           echo "📦 Deployment Package Contents:"
           tree deployment/ || ls -laR deployment/
       
       - name: Create Deployment Package
         run: |
-          tar -czf mlops-deployment-${{ github.run_number }}.tar.gz deployment/ requirements*.txt README.md
+          echo "📦 Creating deployment package..."
+          
+          # Start with required files
+          tar -czf mlops-deployment-${{ github.run_number }}.tar.gz deployment/ requirements*.txt
+          
+          # Check if README exists and add it separately if needed
+          if [ -f "README.md" ]; then
+            echo "✅ README.md found, adding to package"
+            tar -rzf mlops-deployment-${{ github.run_number }}.tar.gz README.md
+          else
+            echo "⚠️ README.md not found in root, skipping"
+          fi
+          
+          echo "✅ Package created successfully"
+          ls -lh mlops-deployment-${{ github.run_number }}.tar.gz
+          
+          # Show package contents
+          echo ""
+          echo "📦 Package contents:"
+          tar -tzf mlops-deployment-${{ github.run_number }}.tar.gz | head -20
 
       - name: Upload Deployment Package
         uses: actions/upload-artifact@v4
         with:
           name: deployment-package
-          path: |
-            mlops-deployment-${{ github.run_number }}.tar.gz
+          path: mlops-deployment-${{ github.run_number }}.tar.gz
 
   notify:
     name: Notify
