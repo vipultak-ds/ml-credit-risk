@@ -188,7 +188,7 @@ jobs:
           mkdir -p deployment/models
       
       - name: Download Model Artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: production-model
           path: deployment/models/
@@ -203,7 +203,7 @@ jobs:
           tar -czf mlops-deployment-${{ github.run_number }}.tar.gz deployment/ requirements*.txt README.md
 
       - name: Upload Deployment Package
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: deployment-package
           path: |
