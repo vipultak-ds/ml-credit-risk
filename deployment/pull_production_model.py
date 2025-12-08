@@ -33,7 +33,7 @@ DATABRICKS_HOST = os.getenv("DATABRICKS_HOST", "").rstrip("/")
 DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN", "")
 
 # Output paths
-LOCAL_MODEL_DIR = "models"
+LOCAL_MODEL_DIR = os.path.join("deployment", "models")
 ENDPOINT_CONFIG_FILE = os.path.join(LOCAL_MODEL_DIR, "endpoint_config.json")
 METADATA_FILE = os.path.join(LOCAL_MODEL_DIR, "model_metadata.json")
 
