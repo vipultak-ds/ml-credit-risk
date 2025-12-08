@@ -142,7 +142,7 @@ workflow:
     enabled: true
     log_to_mlflow: true
     save_artifacts: true
-    use_preprocessed_data: true
+    use_preprocessed_data: false
 
   evaluation:
     enabled: true
