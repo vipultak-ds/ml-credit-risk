@@ -249,7 +249,8 @@ def save_endpoint_config(model_info, endpoint_info):
         endpoint_config = {
             "use_serving_endpoint": True,
             "endpoint_name": config.SERVING_ENDPOINT_NAME,
-            "endpoint_url": f"{config.DATABRICKS_HOST}/serving-endpoints/{config.SERVING_ENDPOINT_NAME}/invocations",
+            # 🔥 FIXED URL HERE
+            "endpoint_url": f"{config.DATABRICKS_HOST}/api/2.0/serving-endpoints/{config.SERVING_ENDPOINT_NAME}/invocations",
             "model_info": model_info,
             "endpoint_state": endpoint_info.get("state") if endpoint_info else None,
             "config_version": endpoint_info.get("config", {}).get("config_version") if endpoint_info else None,
@@ -275,6 +276,7 @@ def save_endpoint_config(model_info, endpoint_info):
     except Exception as e:
         print(f"⚠️  Failed to save endpoint config: {e}")
         return False
+
 
 # DATABRICKS REST API METHOD (Fallback)
 
