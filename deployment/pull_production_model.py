@@ -10,6 +10,8 @@ import json
 from datetime import datetime
 from dotenv import load_dotenv
 import shutil
+import tempfile
+from pathlib import Path
 
 # Load environment variables
 load_dotenv()
@@ -138,7 +140,7 @@ def get_production_model_info(client):
 # MODEL DOWNLOAD
 
 def download_model(model_info):
-    """Download model from MLflow Registry"""
+    """Download model from MLflow Registry with multiple fallback methods"""
     try:
         os.makedirs(config.LOCAL_MODEL_DIR, exist_ok=True)
 
@@ -147,21 +149,90 @@ def download_model(model_info):
             shutil.rmtree(config.LOCAL_MODEL_PATH)
 
         model_uri = f"models:/{config.MODEL_NAME}@{config.MODEL_ALIAS}"
+        run_uri = f"runs:/{model_info['run_id']}/model"
 
         print(f"\n📥 Downloading model...")
         print(f"   Source: {model_uri}")
         print(f"   Destination: {config.LOCAL_MODEL_PATH}")
+        print(f"   Note: Using Databricks API (not direct S3 access)")
 
-        mlflow.artifacts.download_artifacts(
-            artifact_uri=model_uri,
-            dst_path=config.LOCAL_MODEL_PATH
-        )
-
-        print(f"✅ Model downloaded successfully")
-
-        save_metadata(model_info)
-
-        return True
+        # Method 1: Try downloading from run artifacts (bypasses S3 bucket location check)
+        try:
+            print(f"\n   🔄 Method 1: Downloading from run artifacts...")
+            
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_path = Path(temp_dir) / "model"
+                
+                # Download from run instead of model registry
+                mlflow.artifacts.download_artifacts(
+                    artifact_uri=run_uri,
+                    dst_path=str(temp_path)
+                )
+                
+                # Move to final destination
+                if (temp_path / "model").exists():
+                    shutil.move(str(temp_path / "model"), config.LOCAL_MODEL_PATH)
+                else:
+                    shutil.move(str(temp_path), config.LOCAL_MODEL_PATH)
+                
+            print(f"   ✅ Method 1 successful")
+            print(f"✅ Model downloaded successfully")
+            save_metadata(model_info)
+            return True
+            
+        except Exception as e1:
+            print(f"   ⚠️  Method 1 failed: {str(e1)}")
+            
+            # Method 2: Load model and re-save locally
+            try:
+                print(f"\n   🔄 Method 2: Load and re-save model...")
+                
+                # Load model using pyfunc
+                model = mlflow.pyfunc.load_model(model_uri)
+                
+                # Get the underlying sklearn model
+                if hasattr(model, '_model_impl'):
+                    sklearn_model = model._model_impl.python_model
+                else:
+                    sklearn_model = model
+                
+                # Save as MLflow model locally
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    temp_model_path = Path(temp_dir) / "temp_model"
+                    
+                    mlflow.sklearn.save_model(
+                        sklearn_model,
+                        str(temp_model_path)
+                    )
+                    
+                    # Move to final destination
+                    shutil.move(str(temp_model_path), config.LOCAL_MODEL_PATH)
+                
+                print(f"   ✅ Method 2 successful")
+                print(f"✅ Model downloaded successfully")
+                save_metadata(model_info)
+                return True
+                
+            except Exception as e2:
+                print(f"   ⚠️  Method 2 failed: {str(e2)}")
+                
+                # Method 3: Original method as last resort
+                try:
+                    print(f"\n   🔄 Method 3: Direct artifact download...")
+                    
+                    mlflow.artifacts.download_artifacts(
+                        artifact_uri=model_uri,
+                        dst_path=config.LOCAL_MODEL_PATH
+                    )
+                    
+                    print(f"   ✅ Method 3 successful")
+                    print(f"✅ Model downloaded successfully")
+                    save_metadata(model_info)
+                    return True
+                    
+                except Exception as e3:
+                    print(f"   ❌ Method 3 failed: {str(e3)}")
+                    raise Exception(f"All download methods failed. Last error: {str(e3)}")
 
     except Exception as e:
         print(f"❌ Model download failed: {e}")
