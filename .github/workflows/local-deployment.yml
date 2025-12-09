@@ -117,9 +117,17 @@ jobs:
             BODY=$(echo "$RESPONSE" | head -n -1)
             
             if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Health check passed!"
-              echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
-              exit 0
+              # Check if model is actually loaded
+              MODEL_LOADED=$(echo "$BODY" | python -c "import sys, json; data=json.load(sys.stdin); print(data.get('model_loaded', False))" 2>/dev/null || echo "false")
+              
+              if [ "$MODEL_LOADED" = "True" ]; then
+                echo "✅ Health check passed and model loaded!"
+                echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
+                exit 0
+              else
+                echo "⏳ Attempt $i/30: API healthy but model still loading..."
+                echo "   Status: $(echo "$BODY" | python -c "import sys, json; print(json.load(sys.stdin).get('status', 'unknown'))" 2>/dev/null)"
+              fi
             elif [ "$HTTP_CODE" = "503" ]; then
               echo "⏳ Attempt $i/30: Model still loading (503)..."
             else
@@ -130,11 +138,14 @@ jobs:
           done
           
           # If we got here, timeout occurred
-          echo "❌ Health check timeout after 150 seconds (2.5 minutes)"
+          echo "❌ Model loading timeout after 150 seconds (2.5 minutes)"
           echo ""
-          echo "Last 100 lines of api.log:"
-          echo "=========================="
-          tail -100 api.log
+          echo "Full api.log (last 200 lines):"
+          echo "=============================="
+          tail -200 api.log
+          echo ""
+          echo "=============================="
+          echo "⚠️ Model failed to load - check errors above"
           exit 1
 
       - name: Test Model Info Endpoint
@@ -180,6 +191,36 @@ jobs:
         with:
           name: api-logs
           path: deployment/api.log
+          retention-days: 7
+
+      - name: Debug Info on Failure
+        if: failure()
+        run: |
+          echo "=============================="
+          echo "🔍 DEBUG INFORMATION"
+          echo "=============================="
+          echo ""
+          echo "1. Process Status:"
+          if [ -f deployment/api.pid ]; then
+            PID=$(cat deployment/api.pid)
+            ps -p $PID -o pid,ppid,cmd,%mem,%cpu,etime || echo "Process not found"
+          fi
+          echo ""
+          echo "2. Port Status:"
+          lsof -i :8000 || echo "No process on port 8000"
+          echo ""
+          echo "3. Environment Variables:"
+          cd deployment
+          cat .env | grep -v TOKEN | grep -v SECRET || echo "No .env file"
+          echo ""
+          echo "4. Python Environment:"
+          python --version
+          pip list | grep -E "(mlflow|databricks|fastapi)" || echo "Packages not found"
+          echo ""
+          echo "5. Full API Log:"
+          echo "=============================="
+          cat deployment/api.log
+          echo "=============================="
 
   build-package:
     name: Build Deployment Package
