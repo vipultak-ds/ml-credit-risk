@@ -84,6 +84,7 @@ jobs:
           echo "MODEL_ALIAS=Production" >> deployment/.env
           echo "API_HOST=0.0.0.0" >> deployment/.env
           echo "API_PORT=8000" >> deployment/.env
+          echo "MLFLOW_ENABLE_ARTIFACT_PROXY=true" >> deployment/.env
 
       - name: Start API Service
         run: |

@@ -19,6 +19,9 @@ from mlflow.tracking import MlflowClient
 # Load environment variables
 load_dotenv()
 
+# Fix permission issue when loading models from Databricks Registry
+os.environ["MLFLOW_ENABLE_ARTIFACT_PROXY"] = "true"
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
