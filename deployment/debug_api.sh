@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "🔍 DEBUGGING API STATUS"
-echo "======================="
+echo "🔍 DEBUGGING API STATUS (Model Registry Mode)"
+echo "=============================================="
 
 # Check if port 8000 is in use
 echo ""
@@ -38,9 +38,9 @@ echo "3. Checking API logs..."
 if [ -f "deployment/api.log" ]; then
     echo "✅ api.log exists"
     echo ""
-    echo "Last 20 lines of api.log:"
+    echo "Last 30 lines of api.log:"
     echo "------------------------"
-    tail -20 deployment/api.log
+    tail -30 deployment/api.log
 else
     echo "❌ api.log not found"
 fi
@@ -50,7 +50,6 @@ echo ""
 echo "4. Checking deployment files..."
 REQUIRED_FILES=(
     "deployment/app.py"
-    "deployment/models/endpoint_config.json"
     "deployment/.env"
 )
 
@@ -62,16 +61,63 @@ for file in "${REQUIRED_FILES[@]}"; do
     fi
 done
 
+# Check .env configuration
 echo ""
-echo "======================="
-echo "💡 Next Steps:"
-echo "======================="
-if lsof -i :8000 2>/dev/null | grep -q LISTEN; then
-    echo "API is running but not responding:"
-    echo "  → Check logs above for errors"
-    echo "  → Try restarting: cd deployment && python app.py"
+echo "5. Checking .env configuration..."
+if [ -f "deployment/.env" ]; then
+    echo "✅ .env file exists"
+    echo ""
+    echo "Environment variables (without values):"
+    grep -E "^(DATABRICKS_HOST|DATABRICKS_TOKEN|MODEL_NAME|MODEL_ALIAS)=" deployment/.env | sed 's/=.*/=***/' || echo "   ⚠️ No variables found"
 else
-    echo "API is NOT running:"
-    echo "  → Run: cd deployment && python app.py"
-    echo "  → Or use: bash deployment/deploy_local.sh"
+    echo "❌ .env not found in deployment/"
 fi
+
+# Check Python and dependencies
+echo ""
+echo "6. Checking Python environment..."
+if command -v python &> /dev/null; then
+    echo "✅ Python found: $(python --version)"
+    
+    # Check MLflow
+    if python -c "import mlflow" 2>/dev/null; then
+        echo "✅ MLflow installed"
+    else
+        echo "❌ MLflow NOT installed (pip install mlflow)"
+    fi
+    
+    # Check FastAPI
+    if python -c "import fastapi" 2>/dev/null; then
+        echo "✅ FastAPI installed"
+    else
+        echo "❌ FastAPI NOT installed (pip install fastapi uvicorn)"
+    fi
+else
+    echo "❌ Python not found!"
+fi
+
+echo ""
+echo "=============================================="
+echo "💡 Next Steps:"
+echo "=============================================="
+if lsof -i :8000 2>/dev/null | grep -q LISTEN; then
+    echo "✅ API is running but not responding properly"
+    echo ""
+    echo "Troubleshooting:"
+    echo "  1. Check logs above for errors"
+    echo "  2. Verify Databricks credentials in .env"
+    echo "  3. Test manually: cd deployment && python app.py"
+    echo "  4. Check model exists: MODEL_NAME and MODEL_ALIAS in .env"
+else
+    echo "❌ API is NOT running"
+    echo ""
+    echo "To start API:"
+    echo "  Option 1: bash start_api.sh"
+    echo "  Option 2: cd deployment && python app.py"
+    echo ""
+    echo "Requirements:"
+    echo "  ✓ .env file with DATABRICKS_HOST and DATABRICKS_TOKEN"
+    echo "  ✓ Model exists in Databricks Model Registry"
+    echo "  ✓ Network access to Databricks"
+fi
+echo "=============================================="

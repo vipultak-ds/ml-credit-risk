@@ -1,7 +1,7 @@
 #!/bin/bash
 
-echo "🚀 STARTING API SERVER"
-echo "======================"
+echo "🚀 STARTING API SERVER (Model Registry Mode)"
+echo "=============================================="
 
 # Colors
 GREEN='\033[0;32m'
@@ -37,12 +37,7 @@ if [ ! -f "deployment/app.py" ]; then
     exit 1
 fi
 
-if [ ! -f "deployment/models/endpoint_config.json" ]; then
-    echo -e "${RED}❌ deployment/models/endpoint_config.json not found!${NC}"
-    echo "Run the GitHub Actions workflow first to create this file."
-    exit 1
-fi
-
+# Check .env file
 if [ ! -f "deployment/.env" ]; then
     echo -e "${YELLOW}⚠️ deployment/.env not found${NC}"
     
@@ -52,11 +47,17 @@ if [ ! -f "deployment/.env" ]; then
         cp .env deployment/.env
     else
         echo -e "${RED}❌ No .env file found!${NC}"
+        echo "Please create .env with:"
+        echo "  DATABRICKS_HOST=your_workspace_url"
+        echo "  DATABRICKS_TOKEN=your_token"
+        echo "  MODEL_NAME=workspace.ml_credit_risk.credit_risk_model_random_forest"
+        echo "  MODEL_ALIAS=Production"
         exit 1
     fi
 fi
 
 echo -e "${GREEN}✅ All required files present${NC}"
+echo -e "${BLUE}ℹ️  Mode: Direct from Model Registry (No Serving Endpoint)${NC}"
 
 # Start API
 echo -e "\n${BLUE}Starting API server...${NC}"
@@ -85,7 +86,9 @@ echo $API_PID > api.pid
 echo -e "${GREEN}✅ API started with PID: $API_PID${NC}"
 
 # Wait for startup
-echo -e "\n${BLUE}Waiting for API to start...${NC}"
+echo -e "\n${BLUE}Waiting for API to start (this may take 10-30 seconds)...${NC}"
+echo "   (Model is being loaded from Databricks Model Registry)"
+
 sleep 5
 
 # Check if process is still running
@@ -93,13 +96,14 @@ if ! ps -p $API_PID > /dev/null 2>&1; then
     echo -e "${RED}❌ API process died immediately!${NC}"
     echo ""
     echo "Error logs:"
+    echo "==========="
     cat api.log
     exit 1
 fi
 
-# Test health endpoint
+# Test health endpoint with more retries
 echo -e "\n${BLUE}Testing health endpoint...${NC}"
-for i in {1..10}; do
+for i in {1..15}; do
     RESPONSE=$(curl -s http://localhost:8000/health 2>/dev/null)
     
     if [ $? -eq 0 ] && echo "$RESPONSE" | grep -q "healthy"; then
@@ -107,9 +111,11 @@ for i in {1..10}; do
         echo ""
         echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
         echo ""
-        echo "======================"
+        echo "=============================================="
         echo -e "${GREEN}🎉 API STARTED SUCCESSFULLY${NC}"
-        echo "======================"
+        echo "=============================================="
+        echo ""
+        echo "📋 Mode: Model Registry (Direct Load)"
         echo ""
         echo "📋 Available URLs:"
         echo "  🌐 Health:     http://localhost:8000/health"
@@ -117,20 +123,27 @@ for i in {1..10}; do
         echo "  🌐 API Docs:   http://localhost:8000/docs"
         echo "  🌐 Root:       http://localhost:8000/"
         echo ""
-        echo "📝 Logs: tail -f deployment/api.log"
-        echo "🛑 Stop:  kill $API_PID"
+        echo "📝 View logs:  tail -f deployment/api.log"
+        echo "🛑 Stop API:   kill $API_PID"
+        echo "=============================================="
         exit 0
     fi
     
-    echo "  Attempt $i/10... waiting"
+    echo "  Attempt $i/15... waiting"
     sleep 2
 done
 
 # If we got here, health check failed
 echo -e "${RED}❌ API health check failed${NC}"
 echo ""
-echo "Last 30 lines of api.log:"
-echo "========================"
-tail -30 api.log
+echo "Last 50 lines of api.log:"
+echo "========================="
+tail -50 api.log
+echo ""
+echo "💡 Common issues:"
+echo "  1. Check DATABRICKS_HOST and DATABRICKS_TOKEN in .env"
+echo "  2. Verify model exists in Model Registry"
+echo "  3. Check network connectivity to Databricks"
+echo "  4. Look for errors in the log above"
 
 exit 1
