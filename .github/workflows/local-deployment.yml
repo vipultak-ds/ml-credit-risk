@@ -91,48 +91,80 @@ jobs:
           nohup python app.py > api.log 2>&1 &
           echo $! > api.pid
           
-          # Wait for API to start (model loading takes time)
-          echo "⏳ Waiting for API to start (30 seconds)..."
-          sleep 30
+          echo "⏳ API process started (PID: $(cat api.pid))"
+          echo "   Waiting for model to load from Databricks..."
+          sleep 10
 
-      - name: Check API Status
+      - name: Wait for Model Loading and Health Check
         run: |
           cd deployment
           
-          # Check if process is running
-          if ! ps -p $(cat api.pid) > /dev/null 2>&1; then
-            echo "❌ API process died"
-            echo "Last 50 lines of log:"
-            tail -50 api.log
-            exit 1
-          fi
+          echo "🔍 Monitoring API startup and model loading..."
           
-          echo "✅ API process is running"
-
-      - name: Test Health Endpoint
-        run: |
-          for i in {1..10}; do
-            if curl -f http://localhost:8000/health; then
-              echo "✅ Health check passed"
-              exit 0
+          for i in {1..30}; do
+            # Check if process is still running
+            if ! ps -p $(cat api.pid) > /dev/null 2>&1; then
+              echo "❌ API process died during startup!"
+              echo ""
+              echo "Full api.log:"
+              cat api.log
+              exit 1
             fi
-            echo "Attempt $i/10..."
-            sleep 3
+            
+            # Try health check
+            RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
+            HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | head -n -1)
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Health check passed!"
+              echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
+              exit 0
+            elif [ "$HTTP_CODE" = "503" ]; then
+              echo "⏳ Attempt $i/30: Model still loading (503)..."
+            else
+              echo "⏳ Attempt $i/30: API starting (HTTP $HTTP_CODE)..."
+            fi
+            
+            sleep 5
           done
           
-          echo "❌ Health check failed"
-          cat deployment/api.log
+          # If we got here, timeout occurred
+          echo "❌ Health check timeout after 150 seconds (2.5 minutes)"
+          echo ""
+          echo "Last 100 lines of api.log:"
+          echo "=========================="
+          tail -100 api.log
           exit 1
 
       - name: Test Model Info Endpoint
         run: |
           echo "Testing /model/info endpoint..."
-          curl -f http://localhost:8000/model/info | python -m json.tool
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8000/model/info)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+          
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ Model info retrieved successfully"
+            echo "$BODY" | python -m json.tool
+          else
+            echo "❌ Model info failed (HTTP $HTTP_CODE)"
+            echo "$BODY"
+            exit 1
+          fi
 
       - name: Run Full API Tests
         run: |
           echo "Running comprehensive API tests..."
-          python deployment/test_api.py
+          cd deployment
+          python test_api.py || {
+            echo "❌ API tests failed"
+            echo ""
+            echo "Last 50 lines of api.log:"
+            tail -50 api.log
+            exit 1
+          }
 
       - name: Stop API Service
         if: always()
