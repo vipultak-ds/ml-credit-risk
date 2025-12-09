@@ -86,9 +86,14 @@ jobs:
           echo "API_PORT=8000" >> deployment/.env
           echo "MLFLOW_ENABLE_ARTIFACT_PROXY=true" >> deployment/.env
 
+      - name: Debug Env
+        run: |
+            echo "MLFLOW_ENABLE_ARTIFACT_PROXY = $MLFLOW_ENABLE_ARTIFACT_PROXY"
+
       - name: Start API Service
         run: |
           cd deployment
+          export MLFLOW_ENABLE_ARTIFACT_PROXY=true
           nohup python app.py > api.log 2>&1 &
           echo $! > api.pid
           
