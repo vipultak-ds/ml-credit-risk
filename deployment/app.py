@@ -137,7 +137,7 @@ def refresh_schema():
 @app.on_event("startup")
 async def startup():
     global model_loader
-    model_loader = ModelLoader()   # ← FIXED: no try/except, no swallowing errors
+    model_loader = ModelLoader()
 
 
 @app.get("/")
@@ -191,14 +191,17 @@ def predict_record(input_data: CreditRiskInput):
     df = pd.DataFrame([input_data.dict()])[config.FEATURES]
 
     pred = int(model_loader.predict(df)[0])
-    proba = float(model_loader.predict_proba(df)[0][1])
-    risk_score = round(1 - proba, 6)
+    proba_default = float(model_loader.predict_proba(df)[0][1])
+    proba_not_default = round(1 - proba_default, 6)
 
     return {
         "prediction": pred,
         "prediction_label": "High Risk" if pred == 1 else "Low Risk",
-        "probability": proba,
-        "risk_score": risk_score,
+
+        # 🔥 RENAMED EXACTLY AS REQUESTED
+        "probability_of_default": proba_default,
+        "probability_of_not_default": proba_not_default,
+
         "model_version": str(model_loader.model_info.get("version")),
         "timestamp": datetime.now().isoformat()
     }
@@ -216,14 +219,17 @@ def predict_batch(batch_data: BatchCreditRiskInput):
 
     results = []
     for i, p in enumerate(preds):
-        proba = float(probs[i][1])
-        risk_score = round(1 - proba, 6)
+        proba_default = float(probs[i][1])
+        proba_not_default = round(1 - proba_default, 6)
 
         results.append({
             "prediction": int(p),
             "prediction_label": "High Risk" if p == 1 else "Low Risk",
-            "probability": proba,
-            "risk_score": risk_score,
+
+            # 🔥 RENAMED
+            "probability_of_default": proba_default,
+            "probability_of_not_default": proba_not_default,
+
             "timestamp": datetime.now().isoformat()
         })
 
