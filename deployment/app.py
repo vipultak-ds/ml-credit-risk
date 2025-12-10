@@ -1,6 +1,5 @@
 """
-🚀 FastAPI Inference Service - Credit Risk Prediction
-Uses Model Registry (Production Alias)
+ 🚀 FastAPI Inference Service - Credit Risk Prediction
 """
 
 import os
@@ -23,10 +22,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ======================
-# MODEL CONFIG
-# ======================
 
+# MODEL CONFIG
+ 
 class Config:
     FEATURES = [
         "checking_balance", "months_loan_duration", "credit_history",
@@ -43,12 +41,9 @@ class Config:
     DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN", "")
 
 config = Config()
-
-
-# ======================
+ 
 # INPUT SCHEMA
-# ======================
-
+ 
 class CreditRiskInput(BaseModel):
     checking_balance: str = Field(..., example="< 0")
     months_loan_duration: int = Field(..., example=6)
@@ -70,12 +65,9 @@ class CreditRiskInput(BaseModel):
 
 class BatchCreditRiskInput(BaseModel):
     inputs: List[CreditRiskInput]
-
-
-# ======================
+ 
 # MODEL LOADER
-# ======================
-
+ 
 class ModelLoader:
     def __init__(self):
         self.model = None
@@ -126,11 +118,9 @@ class ModelLoader:
             preds = self.predict(df)
             return np.array([[0.30, 0.70] if p == 1 else [0.80, 0.20] for p in preds])
 
-
-# ======================
+ 
 # FASTAPI APP
-# ======================
-
+ 
 app = FastAPI(
     title="Credit Risk Prediction API (Model Registry)",
     description="API for credit risk prediction using models from Databricks Model Registry",
@@ -147,10 +137,7 @@ def refresh_schema():
 @app.on_event("startup")
 async def startup():
     global model_loader
-    try:
-        model_loader = ModelLoader()
-    except:
-        model_loader = None
+    model_loader = ModelLoader()   # ← FIXED: no try/except, no swallowing errors
 
 
 @app.get("/")
@@ -180,7 +167,6 @@ def health():
 
 @app.get("/model/info")
 def model_info():
-    """✔ FIXED to match CI expectations"""
     if model_loader is None:
         raise HTTPException(status_code=503, detail="Model not loaded.")
     
@@ -199,7 +185,6 @@ def model_info():
 
 @app.post("/predict")
 def predict_record(input_data: CreditRiskInput):
-    """✔ FIXED RESPONSE SHAPE"""
     if model_loader is None:
         raise HTTPException(status_code=503, detail="Model not loaded.")
 
@@ -221,7 +206,6 @@ def predict_record(input_data: CreditRiskInput):
 
 @app.post("/predict/batch")
 def predict_batch(batch_data: BatchCreditRiskInput):
-    """✔ FIXED RESPONSE SHAPE FOR CI TESTS"""
     if model_loader is None:
         raise HTTPException(status_code=503, detail="Model not loaded.")
 
@@ -249,10 +233,6 @@ def predict_batch(batch_data: BatchCreditRiskInput):
         "predictions": results
     }
 
-
-# ======================
-# MAIN
-# ======================
 
 if __name__ == "__main__":
     import uvicorn

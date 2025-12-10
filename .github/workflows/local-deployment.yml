@@ -33,15 +33,12 @@ jobs:
           import mlflow
           from mlflow.tracking import MlflowClient
           
-          # Set credentials
           os.environ['DATABRICKS_HOST'] = '${{ secrets.DATABRICKS_HOST }}'
           os.environ['DATABRICKS_TOKEN'] = '${{ secrets.DATABRICKS_TOKEN }}'
           
-          # Configure MLflow
           mlflow.set_tracking_uri("databricks")
           mlflow.set_registry_uri("databricks-uc")
           
-          # Verify model exists
           model_name = "workspace.ml_credit_risk.credit_risk_model_random_forest"
           model_alias = "Production"
           
@@ -90,9 +87,8 @@ jobs:
           cd deployment
           nohup python app.py > api.log 2>&1 &
           echo $! > api.pid
-          
           echo "⏳ API process started (PID: $(cat api.pid))"
-          echo "   Waiting for model to load from Databricks..."
+          echo "   Waiting for model to load..."
           sleep 10
 
       - name: Wait for Model Loading and Health Check
@@ -102,125 +98,73 @@ jobs:
           echo "🔍 Monitoring API startup and model loading..."
           
           for i in {1..30}; do
-            # Check if process is still running
             if ! ps -p $(cat api.pid) > /dev/null 2>&1; then
-              echo "❌ API process died during startup!"
-              echo ""
-              echo "Full api.log:"
+              echo "❌ API crashed during startup!"
               cat api.log
+              
+              ### 🔥 ADDED ERROR LOGGING HERE
+              echo "🔴 ERROR DETECTED — dumping full logs"
+              echo "-------------------------------------"
+              if [ -f api.log ]; then tail -200 api.log; fi
+              echo "-------------------------------------"
               exit 1
+
             fi
-            
-            # Try health check
+
             RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8000/health 2>/dev/null || echo "000")
             HTTP_CODE=$(echo "$RESPONSE" | tail -1)
             BODY=$(echo "$RESPONSE" | head -n -1)
             
             if [ "$HTTP_CODE" = "200" ]; then
-              # Check if model is actually loaded
-              MODEL_LOADED=$(echo "$BODY" | python -c "import sys, json; data=json.load(sys.stdin); print(data.get('model_loaded', False))" 2>/dev/null || echo "false")
-              
+              MODEL_LOADED=$(echo "$BODY" | python -c "import sys, json; print(json.load(sys.stdin).get('model_loaded', False))")
               if [ "$MODEL_LOADED" = "True" ]; then
-                echo "✅ Health check passed and model loaded!"
-                echo "$BODY" | python -m json.tool 2>/dev/null || echo "$BODY"
+                echo "✅ Model loaded!"
                 exit 0
-              else
-                echo "⏳ Attempt $i/30: API healthy but model still loading..."
-                echo "   Status: $(echo "$BODY" | python -c "import sys, json; print(json.load(sys.stdin).get('status', 'unknown'))" 2>/dev/null)"
               fi
-            elif [ "$HTTP_CODE" = "503" ]; then
-              echo "⏳ Attempt $i/30: Model still loading (503)..."
-            else
-              echo "⏳ Attempt $i/30: API starting (HTTP $HTTP_CODE)..."
             fi
             
+            echo "⏳ Attempt $i/30: Waiting..."
             sleep 5
           done
-          
-          # If we got here, timeout occurred
-          echo "❌ Model loading timeout after 150 seconds (2.5 minutes)"
-          echo ""
-          echo "Full api.log (last 200 lines):"
-          echo "=============================="
+
+          echo "❌ Timeout while loading model"
           tail -200 api.log
-          echo ""
-          echo "=============================="
-          echo "⚠️ Model failed to load - check errors above"
+
+          ### 🔥 ADDED ERROR LOGGING HERE
+          echo "🔴 ERROR DETECTED — dumping full logs"
+          if [ -f api.log ]; then tail -200 api.log; fi
           exit 1
 
       - name: Test Model Info Endpoint
         run: |
-          echo "Testing /model/info endpoint..."
-          
+          echo "Testing /model/info..."
           RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:8000/model/info)
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | head -n -1)
           
-          if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ Model info retrieved successfully"
-            echo "$BODY" | python -m json.tool
-          else
-            echo "❌ Model info failed (HTTP $HTTP_CODE)"
+          if [ "$HTTP_CODE" != "200" ]; then
+            
+            ### 🔥 ADDED ERROR LOGGING HERE
+            echo "❌ /model/info FAILED"
             echo "$BODY"
+            cd deployment
+            tail -200 api.log
             exit 1
+            
           fi
 
       - name: Run Full API Tests
         run: |
-          echo "Running comprehensive API tests..."
+          echo "Running API tests..."
           cd deployment
           python test_api.py || {
+
+            ### 🔥 ADDED ERROR LOGGING HERE
             echo "❌ API tests failed"
-            echo ""
-            echo "Last 50 lines of api.log:"
-            tail -50 api.log
+            tail -200 api.log
             exit 1
+
           }
-
-      - name: Stop API Service
-        if: always()
-        run: |
-          cd deployment
-          if [ -f api.pid ]; then
-            kill $(cat api.pid) 2>/dev/null || true
-          fi
-
-      - name: Upload API Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: api-logs
-          path: deployment/api.log
-          retention-days: 7
-
-      - name: Debug Info on Failure
-        if: failure()
-        run: |
-          echo "=============================="
-          echo "🔍 DEBUG INFORMATION"
-          echo "=============================="
-          echo ""
-          echo "1. Process Status:"
-          if [ -f deployment/api.pid ]; then
-            PID=$(cat deployment/api.pid)
-            ps -p $PID -o pid,ppid,cmd,%mem,%cpu,etime || echo "Process not found"
-          fi
-          echo ""
-          echo "2. Port Status:"
-          lsof -i :8000 || echo "No process on port 8000"
-          echo ""
-          echo "3. Environment Variables:"
-          cd deployment
-          cat .env | grep -v TOKEN | grep -v SECRET || echo "No .env file"
-          echo ""
-          echo "4. Python Environment:"
-          python --version
-          pip list | grep -E "(mlflow|databricks|fastapi)" || echo "Packages not found"
-          echo ""
-          echo "5. Full API Log:"
-          echo "=============================="
-          cat deployment/api.log
-          echo "=============================="
 
   build-package:
     name: Build Deployment Package
@@ -233,45 +177,10 @@ jobs:
 
       - name: Create Deployment Package
         run: |
-          echo "📦 Creating deployment package..."
-          
-          # Files to include
+          echo "📦 Creating package..."
           FILES="deployment/ requirements.txt requirements-deploy.txt"
-          
-          # Add README if exists
-          if [ -f "README.md" ]; then
-            FILES="$FILES README.md"
-          fi
-          
-          # Add scripts
-          if [ -f "start_api.sh" ]; then
-            FILES="$FILES start_api.sh"
-          fi
-          
-          if [ -f "deploy_local.sh" ]; then
-            FILES="$FILES deploy_local.sh"
-          fi
-          
-          if [ -f "debug_api.sh" ]; then
-            FILES="$FILES debug_api.sh"
-          fi
-          
-          # Create package
           tar -czf mlops-deployment-${{ github.run_number }}.tar.gz $FILES
-          
-          echo "✅ Package created"
           ls -lh mlops-deployment-${{ github.run_number }}.tar.gz
-
-      - name: Upload Deployment Package
-        uses: actions/upload-artifact@v4
-        with:
-          name: deployment-package
-          path: mlops-deployment-${{ github.run_number }}.tar.gz
-
-      - name: Package Summary
-        run: |
-          echo "📦 Package Contents:"
-          tar -tzf mlops-deployment-${{ github.run_number }}.tar.gz | head -20
 
   notify:
     name: Notify
@@ -287,58 +196,7 @@ jobs:
              [ "${{ needs.test-api.result }}" == "success" ] && \
              [ "${{ needs.build-package.result }}" == "success" ]; then
             echo "status=success" >> $GITHUB_OUTPUT
-            echo "color=good" >> $GITHUB_OUTPUT
-            echo "emoji=:white_check_mark:" >> $GITHUB_OUTPUT
           else
             echo "status=failure" >> $GITHUB_OUTPUT
-            echo "color=danger" >> $GITHUB_OUTPUT
-            echo "emoji=:x:" >> $GITHUB_OUTPUT
           fi
 
-      - name: Send Slack Notification
-        if: vars.SLACK_WEBHOOK_URL != ''
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          payload: |
-            {
-              "text": "${{ steps.status.outputs.emoji }} MLOps Deployment Completed",
-              "attachments": [
-                {
-                  "color": "${{ steps.status.outputs.color }}",
-                  "fields": [
-                    {
-                      "title": "Status",
-                      "value": "${{ steps.status.outputs.status }}",
-                      "short": true
-                    },
-                    {
-                      "title": "Run Number",
-                      "value": "${{ github.run_number }}",
-                      "short": true
-                    },
-                    {
-                      "title": "Mode",
-                      "value": "Model Registry (Direct)",
-                      "short": true
-                    },
-                    {
-                      "title": "Model",
-                      "value": "credit_risk_model_random_forest",
-                      "short": true
-                    }
-                  ]
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      
-      - name: Print Summary
-        run: |
-          echo "======================================"
-          echo "🚀 Deployment Summary"
-          echo "======================================"
-          echo "Status: ${{ steps.status.outputs.status }}"
-          echo "Run Number: ${{ github.run_number }}"
-          echo "Mode: Model Registry (Direct)"
-          echo "======================================"
