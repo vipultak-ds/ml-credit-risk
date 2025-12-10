@@ -1,5 +1,6 @@
 """
-📦 Pull Production Model (Hardcoded Endpoint Version)
+📦 Pull Production Model - Model Registry Version
+Updated to work with app.py that loads from Model Registry
 """
 
 import os
@@ -7,35 +8,34 @@ import sys
 import json
 from datetime import datetime
 
+# ⚠️ CRITICAL: Set BEFORE MLflow import
+os.environ["MLFLOW_ENABLE_ARTIFACT_PROXY"] = "true"
+
 import mlflow
 from mlflow.tracking import MlflowClient
 from dotenv import load_dotenv
-import requests
 
 # Load .env file
 load_dotenv()
 
 print("=" * 70)
-print("📦 PRODUCTION MODEL SETUP (Hardcoded Endpoint)")
+print("📦 PRODUCTION MODEL SETUP (Model Registry)")
 print("=" * 70)
 
 
-# ---------------------- FIXED CONFIG ---------------------- #
+# ---------------------- CONFIG ---------------------- #
 
 MODEL_NAME = "workspace.ml_credit_risk.credit_risk_model_random_forest"
 MODEL_ALIAS = "Production"
-
-# 🔥 HARD-CODED ENDPOINT
-SERVING_ENDPOINT_NAME = "credit-risk-model-random_forest-prod"
 
 # Auth
 DATABRICKS_HOST = os.getenv("DATABRICKS_HOST", "").rstrip("/")
 DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN", "")
 
-# Output paths (🔥 FIXED PATH)
+# Output paths - for storing metadata only
 LOCAL_MODEL_DIR = os.path.join(os.getcwd(), "deployment", "models")
-ENDPOINT_CONFIG_FILE = os.path.join(LOCAL_MODEL_DIR, "endpoint_config.json")
 METADATA_FILE = os.path.join(LOCAL_MODEL_DIR, "model_metadata.json")
+CONFIG_FILE = os.path.join(LOCAL_MODEL_DIR, "model_config.json")
 
 
 # ---------------------- FUNCTIONS ---------------------- #
@@ -60,12 +60,16 @@ def validate_credentials():
 
 
 def connect_mlflow():
+    """Configure MLflow for Databricks"""
+    print("\n🔗 Configuring MLflow...")
     mlflow.set_tracking_uri("databricks")
     mlflow.set_registry_uri("databricks-uc")
+    print("✅ MLflow configured")
     return MlflowClient()
 
 
 def fetch_model_metadata(client):
+    """Fetch model metadata from registry"""
     print("\n🔍 Fetching Production model metadata...")
 
     try:
@@ -100,98 +104,68 @@ def fetch_model_metadata(client):
         }
 
 
-def check_endpoint():
-    print(f"\n🔍 Checking serving endpoint: {SERVING_ENDPOINT_NAME}")
-
-    url = f"{DATABRICKS_HOST}/api/2.0/serving-endpoints/{SERVING_ENDPOINT_NAME}"
-    headers = {"Authorization": f"Bearer {DATABRICKS_TOKEN}"}
-
-    try:
-        response = requests.get(url, headers=headers, timeout=30)
-
-        if response.status_code == 200:
-            print("✅ Serving endpoint exists")
-            return True
-
-        print(f"❌ Endpoint missing or inaccessible → {response.status_code}")
-        return False
+def test_model_loading():
+    """Test if model can be loaded from registry"""
+    print("\n🧪 Testing model loading from registry...")
     
-    except Exception as e:
-        print(f"❌ Error checking endpoint: {e}")
-        return False
-
-
-def test_prediction():
-    print("\n🧪 Testing inference...")
-
-    url = f"{DATABRICKS_HOST}/serving-endpoints/{SERVING_ENDPOINT_NAME}/invocations"
-
-    payload = {
-        "dataframe_records": [{
-            "checking_balance": "< 0 DM",
-            "months_loan_duration": 6,
-            "credit_history": "critical",
-            "purpose": "radio/tv",
-            "amount": 1169,
-            "savings_balance": "unknown",
-            "employment_duration": "< 1 year",
-            "percent_of_income": 4,
-            "years_at_residence": 4,
-            "age": 67,
-            "other_credit": "none",
-            "housing": "own",
-            "existing_loans_count": 2,
-            "job": "skilled",
-            "dependents": 1,
-            "phone": "yes"
-        }]
-    }
-
-    headers = {
-        "Authorization": f"Bearer {DATABRICKS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=30)
-
-        if response.status_code == 200:
-            print("🎯 Prediction Successful →", response.json())
-            return True
-
-        print(f"❌ Prediction Failed → {response.status_code} | {response.text}")
-        return False
+    model_uri = f"models:/{MODEL_NAME}@{MODEL_ALIAS}"
+    print(f"   Model URI: {model_uri}")
+    print("   ⏳ This may take 30-60 seconds on first load...")
     
+    try:
+        model = mlflow.pyfunc.load_model(model_uri)
+        print("✅ Model loaded successfully from registry!")
+        return True
     except Exception as e:
-        print(f"❌ Prediction error: {e}")
-        return False
+        error_str = str(e)
+        
+        if "AccessDenied" in error_str or "s3:" in error_str:
+            print("\n❌ MODEL LOADING FAILED - S3 Access Denied")
+            print("\n🔍 DIAGNOSIS: Artifact Proxy Not Working")
+            print("="*70)
+            print("Your Databricks workspace doesn't support artifact proxy.")
+            print("\n📋 This is common in Databricks Community Edition.")
+            print("\n✅ SOLUTION: Use Serving Endpoint Instead")
+            print("   1. Deploy model to serving endpoint in Databricks")
+            print("   2. Use the serving endpoint version of scripts")
+            print("   3. Or download model manually to use locally")
+            print("="*70)
+            return False
+        else:
+            print(f"❌ Model loading failed: {e}")
+            return False
 
 
-def save_endpoint_config(metadata):
-    data = {
-        "use_serving_endpoint": True,
-        "endpoint_name": SERVING_ENDPOINT_NAME,
-        "endpoint_url": f"{DATABRICKS_HOST}/serving-endpoints/{SERVING_ENDPOINT_NAME}/invocations",
+def save_config(metadata):
+    """Save configuration for app.py"""
+    config = {
+        "mode": "model_registry",
+        "model_name": MODEL_NAME,
+        "model_alias": MODEL_ALIAS,
+        "model_uri": f"models:/{MODEL_NAME}@{MODEL_ALIAS}",
+        "databricks_host": DATABRICKS_HOST,
         "model_info": metadata,
         "saved_at": datetime.now().isoformat()
     }
 
     try:
-        with open(ENDPOINT_CONFIG_FILE, "w") as f:
-            json.dump(data, f, indent=2)
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(config, f, indent=2)
 
-        print(f"💾 Endpoint config saved → {ENDPOINT_CONFIG_FILE}")
+        print(f"💾 Configuration saved → {CONFIG_FILE}")
         return True
     
     except Exception as e:
-        print(f"❌ Failed to save endpoint config: {e}")
+        print(f"❌ Failed to save configuration: {e}")
         return False
 
 
 # ---------------------- MAIN EXECUTION ---------------------- #
 
 def main():
-    # Step 1: Create directories FIRST
+    print("\n🚀 Setting up Model Registry integration...")
+    
+    # Step 1: Create directories
     if not create_directories():
         print("\n❌ Failed to create necessary directories")
         return False
@@ -205,7 +179,6 @@ def main():
         metadata = fetch_model_metadata(client)
     except Exception as e:
         print(f"⚠️ MLflow connection issue: {e}")
-        # Use minimal metadata to continue
         metadata = {
             "model_name": MODEL_NAME,
             "alias": MODEL_ALIAS,
@@ -214,38 +187,49 @@ def main():
             "timestamp": datetime.now().isoformat()
         }
 
-    # Step 4: Check if endpoint exists
-    endpoint_exists = check_endpoint()
+    # Step 4: Test model loading (NEW - Critical test)
+    print("\n" + "="*70)
+    print("🔍 CRITICAL TEST: Checking if Model Registry loading works")
+    print("="*70)
     
-    if not endpoint_exists:
-        print("\n⚠️ Endpoint check failed, but continuing to save config...")
-        # Save config anyway for workflow to continue
-        save_endpoint_config(metadata)
-        print("\n⚠️ Configuration saved, but endpoint may not be accessible")
-        return True  # Return True to allow workflow to continue
-
-    # Step 5: Test prediction
-    prediction_success = test_prediction()
+    can_load = test_model_loading()
     
-    if not prediction_success:
-        print("\n⚠️ Prediction test failed, but saving config...")
-
-    # Step 6: Save configuration
-    if not save_endpoint_config(metadata):
-        print("\n❌ Failed to save endpoint configuration")
+    if not can_load:
+        print("\n⚠️ Model Registry loading doesn't work in your workspace")
+        print("   Saving config anyway for reference...")
+        save_config(metadata)
+        print("\n💡 Next Steps:")
+        print("   1. Check if you're using Databricks Community Edition")
+        print("   2. Consider using Serving Endpoint approach instead")
+        print("   3. Or use manual model download approach")
         return False
 
-    print("\n🚀 Model successfully configured using serving endpoint.")
-    
+    # Step 5: Save configuration
+    if not save_config(metadata):
+        print("\n❌ Failed to save configuration")
+        return False
+
     # Verify files were created
     print("\n📋 Verification:")
-    if os.path.exists(ENDPOINT_CONFIG_FILE):
-        print(f"✅ {ENDPOINT_CONFIG_FILE} exists")
+    if os.path.exists(CONFIG_FILE):
+        print(f"✅ {CONFIG_FILE} exists")
     else:
-        print(f"❌ {ENDPOINT_CONFIG_FILE} missing!")
+        print(f"❌ {CONFIG_FILE} missing!")
         
     if os.path.exists(METADATA_FILE):
         print(f"✅ {METADATA_FILE} exists")
+    
+    print("\n" + "="*70)
+    print("✅ MODEL REGISTRY SETUP COMPLETE!")
+    print("="*70)
+    print("\n📋 Summary:")
+    print(f"   Model: {MODEL_NAME}")
+    print(f"   Alias: {MODEL_ALIAS}")
+    print(f"   Version: {metadata.get('version', 'unknown')}")
+    print(f"   Mode: Model Registry (Direct Load)")
+    print("\n🚀 You can now start the API:")
+    print("   cd deployment && python app.py")
+    print("="*70)
     
     return True
 

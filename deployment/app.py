@@ -1,49 +1,33 @@
 """
 🚀 FastAPI Inference Service - Credit Risk Prediction
-Uses ONLY Model Registry (NO Serving Endpoint)
+Uses Model Registry (Production Alias)
 """
+
+import os
+os.environ["MLFLOW_ENABLE_ARTIFACT_PROXY"] = "true"
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import logging
-import os
 from dotenv import load_dotenv
 import mlflow
-import mlflow.pyfunc
 from mlflow.tracking import MlflowClient
 
-# Load environment variables
 load_dotenv()
 
-# Fix permission issue when loading models from Databricks Registry
-os.environ["MLFLOW_ENABLE_ARTIFACT_PROXY"] = "true"
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ========================================
-# CONFIGURATION
-# ========================================
+
+# ======================
+# MODEL CONFIG
+# ======================
 
 class Config:
-    """Application configuration"""
-    
-    # Databricks credentials
-    DATABRICKS_HOST = os.getenv("DATABRICKS_HOST", "").rstrip("/")
-    DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN", "")
-    
-    # Model info from Model Registry
-    MODEL_NAME = os.getenv("MODEL_NAME", "workspace.ml_credit_risk.credit_risk_model_random_forest")
-    MODEL_ALIAS = os.getenv("MODEL_ALIAS", "Production")
-
     FEATURES = [
         "checking_balance", "months_loan_duration", "credit_history",
         "purpose", "amount", "savings_balance", "employment_duration",
@@ -51,296 +35,304 @@ class Config:
         "other_credit", "housing", "existing_loans_count",
         "job", "dependents", "phone"
     ]
-
+    
+    # Model Registry Settings
+    MODEL_NAME = os.getenv("MODEL_NAME", "workspace.ml_credit_risk.credit_risk_model_random_forest")
+    MODEL_ALIAS = os.getenv("MODEL_ALIAS", "Production")
+    
+    # Databricks Settings
+    DATABRICKS_HOST = os.getenv("DATABRICKS_HOST", "")
+    DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN", "")
 
 config = Config()
 
-# ========================================
-# PYDANTIC MODELS (API CONTRACTS)
-# ========================================
+
+# ======================
+# INPUT SCHEMA
+# ======================
 
 class CreditRiskInput(BaseModel):
-    checking_balance: str = Field(..., example="< 0 DM")
-    months_loan_duration: int = Field(..., ge=1, le=72, example=6)
+    checking_balance: str = Field(..., example="< 0")
+    months_loan_duration: int = Field(..., example=6)
     credit_history: str = Field(..., example="critical")
-    purpose: str = Field(..., example="car (new)")
-    amount: int = Field(..., ge=250, le=20000, example=1169)
+    purpose: str = Field(..., example="car")
+    amount: int = Field(..., example=1169)
     savings_balance: str = Field(..., example="unknown")
-    employment_duration: str = Field(..., example="> 7 yrs")
-    percent_of_income: int = Field(..., ge=1, le=4, example=4)
-    years_at_residence: int = Field(..., ge=1, le=4, example=4)
-    age: int = Field(..., ge=18, le=100, example=67)
+    employment_duration: str = Field(..., example="> 7")
+    percent_of_income: int = Field(..., example=4)
+    years_at_residence: int = Field(..., example=4)
+    age: int = Field(..., example=30)
     other_credit: str = Field(..., example="none")
     housing: str = Field(..., example="own")
-    existing_loans_count: int = Field(..., ge=1, le=4, example=2)
+    existing_loans_count: int = Field(..., example=1)
     job: str = Field(..., example="skilled employee")
-    dependents: int = Field(..., ge=1, le=2, example=1)
+    dependents: int = Field(..., example=1)
     phone: str = Field(..., example="yes")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "checking_balance": "< 0",
+                "months_loan_duration": 6,
+                "credit_history": "critical",
+                "purpose": "car",
+                "amount": 1169,
+                "savings_balance": "unknown",
+                "employment_duration": "> 7",
+                "percent_of_income": 4,
+                "years_at_residence": 4,
+                "age": 30,
+                "other_credit": "none",
+                "housing": "own",
+                "existing_loans_count": 1,
+                "job": "skilled employee",
+                "dependents": 1,
+                "phone": "yes"
+            }
+        }
+    }
 
 
 class BatchCreditRiskInput(BaseModel):
     inputs: List[CreditRiskInput]
 
 
-class PredictionResponse(BaseModel):
-    prediction: int
-    prediction_label: str
-    probability: float
-    risk_score: float
-    timestamp: str
-    model_version: str
-
-
-class BatchPredictionResponse(BaseModel):
-    predictions: List[PredictionResponse]
-    total_count: int
-    timestamp: str
-
-
-class HealthResponse(BaseModel):
-    status: str
-    model_loaded: bool
-    model_name: str
-    model_version: str
-    model_source: str
-    timestamp: str
-
-
-# ========================================
-# MODEL LOADER (Model Registry ONLY)
-# ========================================
+# ======================
+# MODEL LOADER
+# ======================
 
 class ModelLoader:
-    """Loads model directly from Databricks Model Registry"""
-    
     def __init__(self):
         self.model = None
-        self.model_version = None
-        self._initialize_mlflow()
-        self._load_model()
-    
-    def _initialize_mlflow(self):
-        """Configure MLflow to connect to Databricks"""
+        self.model_info = {}
+        self.load_model_from_registry()
+
+    def load_model_from_registry(self):
+        """Load model from Databricks Model Registry"""
         try:
-            logger.info("🔧 Configuring MLflow for Databricks Unity Catalog...")
+            logger.info("=" * 70)
+            logger.info("📦 LOADING MODEL FROM REGISTRY")
+            logger.info("=" * 70)
             
+            # Configure MLflow
+            logger.info(f"🔗 Connecting to Databricks: {config.DATABRICKS_HOST}")
             mlflow.set_tracking_uri("databricks")
             mlflow.set_registry_uri("databricks-uc")
             
-            logger.info("✅ MLflow configured successfully")
-        except Exception as e:
-            logger.error(f"❌ MLflow configuration failed: {e}")
-            raise
-    
-    def _load_model(self):
-        """Load model from Model Registry"""
-        try:
+            # Get model info
+            client = MlflowClient()
+            logger.info(f"🔍 Fetching model: {config.MODEL_NAME} @ {config.MODEL_ALIAS}")
+            
+            model_version = client.get_model_version_by_alias(
+                config.MODEL_NAME, 
+                config.MODEL_ALIAS
+            )
+            
+            self.model_info = {
+                "name": config.MODEL_NAME,
+                "alias": config.MODEL_ALIAS,
+                "version": model_version.version,
+                "status": model_version.status,
+                "run_id": model_version.run_id,
+                "loaded_at": datetime.now().isoformat()
+            }
+            
+            logger.info(f"📌 Model Version: {model_version.version}")
+            logger.info(f"📌 Status: {model_version.status}")
+            logger.info(f"📌 Run ID: {model_version.run_id}")
+            
+            # Load model using model URI
             model_uri = f"models:/{config.MODEL_NAME}@{config.MODEL_ALIAS}"
+            logger.info(f"⏳ Loading model from URI: {model_uri}")
             
-            logger.info("="*70)
-            logger.info("📦 Loading model from Model Registry...")
-            logger.info(f"   Model URI: {model_uri}")
-            logger.info("="*70)
-            
-            # Load the model
             self.model = mlflow.pyfunc.load_model(model_uri)
             
-            # Get model version info
-            client = MlflowClient()
-            mv = client.get_model_version_by_alias(config.MODEL_NAME, config.MODEL_ALIAS)
-            self.model_version = mv.version
-            
-            logger.info("="*70)
-            logger.info("✅ MODEL LOADED SUCCESSFULLY")
-            logger.info(f"   Name: {config.MODEL_NAME}")
-            logger.info(f"   Alias: {config.MODEL_ALIAS}")
-            logger.info(f"   Version: {self.model_version}")
-            logger.info(f"   Status: {mv.status}")
-            logger.info(f"   Source: Model Registry (Direct)")
-            logger.info("="*70)
+            logger.info("✅ Model loaded successfully from registry!")
+            logger.info("=" * 70)
             
         except Exception as e:
-            logger.error("="*70)
-            logger.error("❌ MODEL LOADING FAILED")
-            logger.error(f"   Error: {e}")
-            logger.error("="*70)
-            logger.error("\n💡 Troubleshooting:")
-            logger.error("   1. Check DATABRICKS_HOST and DATABRICKS_TOKEN in .env")
-            logger.error(f"   2. Verify model exists: {config.MODEL_NAME}")
-            logger.error(f"   3. Verify alias exists: {config.MODEL_ALIAS}")
-            logger.error("   4. Check network connectivity to Databricks")
+            logger.error(f"❌ Failed to load model from registry: {e}")
+            logger.error(f"   Model Name: {config.MODEL_NAME}")
+            logger.error(f"   Model Alias: {config.MODEL_ALIAS}")
+            logger.error(f"   Databricks Host: {config.DATABRICKS_HOST}")
             raise
-    
-    def predict(self, df: pd.DataFrame) -> np.ndarray:
+
+    def predict(self, df):
         """Make predictions"""
-        return self.model.predict(df)
-    
-    def predict_proba(self, df: pd.DataFrame) -> np.ndarray:
+        if self.model is None:
+            raise ValueError("Model not loaded!")
+        
+        # Use MLflow's predict method
+        predictions = self.model.predict(df)
+        return predictions
+
+    def predict_proba(self, df):
         """Get prediction probabilities"""
-        # Try to get probabilities
         try:
-            return self.model.predict_proba(df)
-        except AttributeError:
-            # If model doesn't have predict_proba, create dummy probabilities
-            predictions = self.predict(df)
-            proba_matrix = [[0.7, 0.3] if p == 0 else [0.3, 0.7] for p in predictions]
-            return np.array(proba_matrix)
+            # Try to get probabilities from the model
+            if hasattr(self.model, 'predict_proba'):
+                return self.model.predict_proba(df)
+            else:
+                # For MLflow models, use the underlying model
+                proba = self.model._model_impl.python_model.predict_proba(df)
+                return proba
+        except Exception as e:
+            logger.warning(f"Could not get probabilities: {e}")
+            # Fallback: generate dummy probabilities
+            preds = self.predict(df)
+            return np.array([[0.30, 0.70] if p == 1 else [0.80, 0.20] for p in preds])
 
 
-# ========================================
-# FASTAPI APPLICATION
-# ========================================
+# ======================
+# FASTAPI APP
+# ======================
 
 app = FastAPI(
-    title="Credit Risk Prediction API",
-    description="MLOps inference service using Databricks Model Registry",
-    version="1.0.0",
-    docs_url="/docs"
+    title="Credit Risk Prediction API (Model Registry)",
+    description="API for credit risk prediction using models from Databricks Model Registry",
+    version="2.0.0"
 )
+model_loader: Optional[ModelLoader] = None
 
-# Initialize model loader
-model_loader = None
 
 @app.on_event("startup")
-async def startup_event():
-    """Load model on startup"""
+def refresh_schema():
+    app.openapi_schema = None
+    logger.info("🔄 Swagger/OpenAPI schema refreshed.")
+
+
+@app.on_event("startup")
+async def startup():
     global model_loader
     try:
-        logger.info("🚀 Starting API server...")
         model_loader = ModelLoader()
-        logger.info("✅ API ready to serve predictions")
+        logger.info("🚀 API startup complete - Model loaded from registry")
     except Exception as e:
-        logger.error(f"❌ Startup failed: {e}")
-        logger.error("   API will start but predictions will fail")
+        logger.error(f"❌ Failed to load model during startup: {e}")
+        # Don't raise - let health check handle it
+        model_loader = None
 
 
 @app.get("/")
-async def root():
+def root():
+    """Root endpoint"""
     return {
-        "message": "Credit Risk Prediction API",
+        "service": "Credit Risk Prediction API",
+        "version": "2.0.0",
+        "mode": "Model Registry",
         "status": "running",
-        "model_source": "Databricks Model Registry",
-        "docs": "/docs",
-        "health": "/health"
+        "model_loaded": model_loader is not None,
+        "timestamp": datetime.now().isoformat()
     }
 
 
-@app.get("/health", response_model=HealthResponse)
-async def health():
+@app.get("/health")
+def health():
     """Health check endpoint"""
-    ok = model_loader is not None
-    return HealthResponse(
-        status="healthy" if ok else "unhealthy",
-        model_loaded=ok,
-        model_name=config.MODEL_NAME,
-        model_version=str(model_loader.model_version) if ok else "N/A",
-        model_source="Model Registry (Direct)",
-        timestamp=datetime.now().isoformat()
-    )
+    if model_loader is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Service unavailable."
+        )
+    
+    return {
+        "status": "healthy",
+        "model_loaded": True,
+        "model_info": model_loader.model_info,
+        "timestamp": datetime.now().isoformat()
+    }
 
 
 @app.get("/model/info")
-async def model_info():
+def model_info():
     """Get model information"""
-    if not model_loader:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+    if model_loader is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded"
+        )
     
     return {
-        "model_name": config.MODEL_NAME,
-        "model_version": str(model_loader.model_version),
-        "model_alias": config.MODEL_ALIAS,
-        "model_source": "Databricks Model Registry (Direct Load)",
+        "model_info": model_loader.model_info,
         "features": config.FEATURES,
-        "feature_count": len(config.FEATURES),
-        "endpoints": {
-            "health": "/health",
-            "model_info": "/model/info",
-            "predict": "/predict",
-            "batch_predict": "/predict/batch"
-        }
+        "timestamp": datetime.now().isoformat()
     }
 
 
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(input_data: CreditRiskInput):
-    """Single prediction endpoint"""
-    if not model_loader:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    
-    try:
-        # Convert input to DataFrame
-        df = pd.DataFrame([input_data.dict()])[config.FEATURES]
-        
-        # Get predictions
-        pred = int(model_loader.predict(df)[0])
-        prob = model_loader.predict_proba(df)[0]
-        
-        label = "High Risk" if pred == 1 else "Low Risk"
-        
-        return PredictionResponse(
-            prediction=pred,
-            prediction_label=label,
-            probability=float(prob[pred]),
-            risk_score=float(prob[1]),
-            timestamp=datetime.now().isoformat(),
-            model_version=str(model_loader.model_version)
+@app.post("/predict")
+def predict_record(input_data: CreditRiskInput):
+    """Predict single record"""
+    if model_loader is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Service unavailable."
         )
-        
+
+    try:
+        input_df = pd.DataFrame([input_data.dict()])
+        input_df = input_df[config.FEATURES]
+
+        pred = int(model_loader.predict(input_df)[0])
+        proba = model_loader.predict_proba(input_df)[0]
+
+        return {
+            "prediction": pred,
+            "risk_label": "High Risk" if pred == 1 else "Low Risk",
+            "risk_probability": float(proba[1]),
+            "model_version": model_loader.model_info.get("version"),
+            "timestamp": datetime.now().isoformat()
+        }
     except Exception as e:
         logger.error(f"Prediction error: {e}")
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/predict/batch", response_model=BatchPredictionResponse)
-async def batch_predict(batch_data: BatchCreditRiskInput):
-    """Batch prediction endpoint"""
-    if not model_loader:
-        raise HTTPException(status_code=503, detail="Model not loaded")
-    
+@app.post("/predict/batch")
+def predict_batch(batch_data: BatchCreditRiskInput):
+    """Predict batch of records"""
+    if model_loader is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded. Service unavailable."
+        )
+
     try:
-        # Convert inputs to DataFrame
-        df = pd.DataFrame([item.dict() for item in batch_data.inputs])[config.FEATURES]
-        
-        # Get predictions
+        df = pd.DataFrame([item.dict() for item in batch_data.inputs])
+        df = df[config.FEATURES]
+
         preds = model_loader.predict(df)
         probs = model_loader.predict_proba(df)
-        
-        results = [
-            PredictionResponse(
-                prediction=int(pred),
-                prediction_label="High Risk" if pred == 1 else "Low Risk",
-                probability=float(probs[i][int(pred)]),
-                risk_score=float(probs[i][1]),
-                timestamp=datetime.now().isoformat(),
-                model_version=str(model_loader.model_version)
-            )
-            for i, pred in enumerate(preds)
-        ]
-        
-        return BatchPredictionResponse(
-            predictions=results,
-            total_count=len(results),
-            timestamp=datetime.now().isoformat()
-        )
-        
+
+        results = []
+        for i, pred in enumerate(preds):
+            results.append({
+                "prediction": int(pred),
+                "risk_label": "High Risk" if pred == 1 else "Low Risk",
+                "risk_probability": float(probs[i][1]),
+                "timestamp": datetime.now().isoformat()
+            })
+
+        return {
+            "total_records": len(results),
+            "model_version": model_loader.model_info.get("version"),
+            "results": results
+        }
     except Exception as e:
         logger.error(f"Batch prediction error: {e}")
-        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# ========================================
-# RUN SERVER
-# ========================================
+# ======================
+# MAIN
+# ======================
 
 if __name__ == "__main__":
     import uvicorn
     
-    logger.info("="*70)
-    logger.info("🚀 Starting Credit Risk API Server")
-    logger.info("="*70)
-    logger.info(f"Model: {config.MODEL_NAME}")
-    logger.info(f"Alias: {config.MODEL_ALIAS}")
-    logger.info("Source: Databricks Model Registry (Direct)")
-    logger.info("="*70)
+    host = os.getenv("API_HOST", "0.0.0.0")
+    port = int(os.getenv("API_PORT", "8000"))
     
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=False)
+    logger.info(f"🚀 Starting API server on {host}:{port}")
+    logger.info(f"📦 Model: {config.MODEL_NAME} @ {config.MODEL_ALIAS}")
+    
+    uvicorn.run(app, host=host, port=port)
