@@ -192,6 +192,8 @@ jobs:
           if [ "${{ needs.verify-model.result }}" == "success" ] && \
              [ "${{ needs.test-api.result }}" == "success" ] && \
              [ "${{ needs.build-package.result }}" == "success" ]; then
-            echo "status=success" >> $GITHUB_OUTPUT
+              echo "status=success" >> $GITHUB_OUTPUT
           else
-            echo "status=failure" >> $GITHUB_OUTPUT
+              echo "status=failure" >> $GITHUB_OUTPUT
+          fi
+
