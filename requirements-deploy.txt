@@ -1,19 +1,24 @@
-# Core ML Runtime
+# --- CORE ML ---
 pandas==2.0.3
 numpy==1.24.3
-scikit-learn==1.3.0
-mlflow[databricks]==2.8.1
 
-# API Framework
+# sklearn version MUST match model creation version or be >=1.4 for MLflow UC
+scikit-learn==1.4.2
+
+# MLflow with Databricks UC support
+mlflow-skinny[databricks]>=2.12.0
+databricks-sdk>=0.19.0
+
+# --- API ---
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 
-# Utilities
+# --- UTILITIES ---
 python-dotenv==1.0.0
 requests==2.31.0
 PyYAML==6.0.1
 
-# Testing (Optional but recommended)
+# --- TESTING ---
 pytest==7.4.4
 httpx==0.26.0
