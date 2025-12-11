@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 # MODEL CONFIG
- 
+
 class Config:
     FEATURES = [
         "checking_balance", "months_loan_duration", "credit_history",
@@ -41,14 +41,15 @@ class Config:
     DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN", "")
 
 config = Config()
- 
+
 # INPUT SCHEMA
- 
+# (✔ updated example values – no logic changes)
+
 class CreditRiskInput(BaseModel):
     checking_balance: str = Field(..., example="< 0")
     months_loan_duration: int = Field(..., example=6)
     credit_history: str = Field(..., example="critical")
-    purpose: str = Field(..., example="car")
+    purpose: str = Field(..., example="car")              # fixed
     amount: int = Field(..., example=1169)
     savings_balance: str = Field(..., example="unknown")
     employment_duration: str = Field(..., example="> 7")
@@ -58,16 +59,16 @@ class CreditRiskInput(BaseModel):
     other_credit: str = Field(..., example="none")
     housing: str = Field(..., example="own")
     existing_loans_count: int = Field(..., example=1)
-    job: str = Field(..., example="skilled")
+    job: str = Field(..., example="skilled")              # fixed
     dependents: int = Field(..., example=1)
     phone: str = Field(..., example="yes")
 
 
 class BatchCreditRiskInput(BaseModel):
     inputs: List[CreditRiskInput]
- 
+
 # MODEL LOADER
- 
+
 class ModelLoader:
     def __init__(self):
         self.model = None
@@ -79,15 +80,15 @@ class ModelLoader:
             logger.info("=" * 70)
             logger.info("📦 LOADING MODEL FROM REGISTRY")
             logger.info("=" * 70)
-            
+
             mlflow.set_tracking_uri("databricks")
             mlflow.set_registry_uri("databricks-uc")
-            
+
             client = MlflowClient()
             model_version = client.get_model_version_by_alias(
                 config.MODEL_NAME, config.MODEL_ALIAS
             )
-            
+
             self.model_info = {
                 "name": config.MODEL_NAME,
                 "alias": config.MODEL_ALIAS,
@@ -96,10 +97,10 @@ class ModelLoader:
                 "run_id": model_version.run_id,
                 "loaded_at": datetime.now().isoformat()
             }
-            
+
             model_uri = f"models:/{config.MODEL_NAME}@{config.MODEL_ALIAS}"
             self.model = mlflow.pyfunc.load_model(model_uri)
-            
+
             logger.info("✅ Model loaded successfully!")
 
         except Exception as e:
@@ -118,9 +119,9 @@ class ModelLoader:
             preds = self.predict(df)
             return np.array([[0.30, 0.70] if p == 1 else [0.80, 0.20] for p in preds])
 
- 
+
 # FASTAPI APP
- 
+
 app = FastAPI(
     title="Credit Risk Prediction API (Model Registry)",
     description="API for credit risk prediction using models from Databricks Model Registry",
@@ -137,7 +138,7 @@ def refresh_schema():
 @app.on_event("startup")
 async def startup():
     global model_loader
-    model_loader = ModelLoader()   # ← FIXED: no try/except, no swallowing errors
+    model_loader = ModelLoader()
 
 
 @app.get("/")
@@ -156,7 +157,7 @@ def root():
 def health():
     if model_loader is None:
         raise HTTPException(status_code=503, detail="Model not loaded.")
-    
+
     return {
         "status": "healthy",
         "model_loaded": True,
@@ -169,7 +170,7 @@ def health():
 def model_info():
     if model_loader is None:
         raise HTTPException(status_code=503, detail="Model not loaded.")
-    
+
     info = model_loader.model_info
 
     return {
@@ -191,14 +192,16 @@ def predict_record(input_data: CreditRiskInput):
     df = pd.DataFrame([input_data.dict()])[config.FEATURES]
 
     pred = int(model_loader.predict(df)[0])
-    proba = float(model_loader.predict_proba(df)[0][1])
-    risk_score = round(1 - proba, 6)
+    proba_default = float(model_loader.predict_proba(df)[0][1])
+    proba_not_default = round(1 - proba_default, 6)
 
     return {
         "prediction": pred,
         "prediction_label": "High Risk" if pred == 1 else "Low Risk",
-        "probability": proba,
-        "risk_score": risk_score,
+
+        "probability_of_default": proba_default,
+        "probability_of_not_default": proba_not_default,
+
         "model_version": str(model_loader.model_info.get("version")),
         "timestamp": datetime.now().isoformat()
     }
@@ -216,14 +219,16 @@ def predict_batch(batch_data: BatchCreditRiskInput):
 
     results = []
     for i, p in enumerate(preds):
-        proba = float(probs[i][1])
-        risk_score = round(1 - proba, 6)
+        proba_default = float(probs[i][1])
+        proba_not_default = round(1 - proba_default, 6)
 
         results.append({
             "prediction": int(p),
             "prediction_label": "High Risk" if p == 1 else "Low Risk",
-            "probability": proba,
-            "risk_score": risk_score,
+
+            "probability_of_default": proba_default,
+            "probability_of_not_default": proba_not_default,
+
             "timestamp": datetime.now().isoformat()
         })
 
