@@ -1,3 +1,4 @@
+#add_repo_script
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import NotFound, BadRequest
 import time
