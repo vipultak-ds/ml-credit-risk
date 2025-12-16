@@ -1,0 +1,5 @@
+outs:
+- md5: 4ea3c89fcab7e1a7d10b772d3ccd03fe
+  size: 456
+  hash: md5
+  path: training_refs.yaml
