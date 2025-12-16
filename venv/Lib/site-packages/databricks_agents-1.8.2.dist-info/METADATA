@@ -1,0 +1,74 @@
+Metadata-Version: 2.4
+Name: databricks-agents
+Version: 1.8.2
+Summary: Mosaic AI Agent Framework SDK
+Author: Databricks
+Author-email: feedback@databricks.com
+License: Databricks Proprietary License
+Classifier: Development Status :: 3 - Alpha
+Classifier: License :: Other/Proprietary License
+Classifier: Programming Language :: Python :: Implementation :: CPython
+Classifier: Programming Language :: Python :: Implementation :: PyPy
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: databricks-connect
+Requires-Dist: dataclasses-json
+Requires-Dist: databricks-sdk[openai]>=0.58.0
+Requires-Dist: jinja2>=3.0.0
+Requires-Dist: mlflow-skinny<4.0.0,>=3.4.0
+Requires-Dist: tenacity>=8.5
+Requires-Dist: tiktoken>=0.8.0
+Requires-Dist: tqdm
+Requires-Dist: urllib3>=2.0
+Requires-Dist: pydantic>=2
+Requires-Dist: whenever==0.7.3
+Requires-Dist: boto3>1
+Requires-Dist: botocore
+Requires-Dist: litellm==1.75.9
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: license
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Limitations
+
+The software and other materials included in this library are subject to the [DB license](https://www.databricks.com/legal/db-license).
+
+
+# License
+
+**DB license**
+
+Copyright (2024) Databricks, Inc.
+
+This library (the "Software") may not be used except in connection with the Licensee's use of the Databricks Platform Services
+pursuant to an Agreement (defined below) between Licensee (defined below) and Databricks, Inc. ("Databricks"). This Software
+shall be deemed part of the Downloadable Services under the Agreement, or if the Agreement does not define Downloadable Services,
+Subscription Services, or if neither are defined then the term in such Agreement that refers to the applicable Databricks Platform
+Services (as defined below) shall be substituted herein for "Downloadable Services". Licensee's use of the Software must comply at
+all times with any restrictions applicable to the Downlodable Services and Subscription Services, generally, and must be used in
+accordance with any applicable documentation.
+
+Additionally, and notwithstanding anything in the Agreement to the contrary:
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+If you have not agreed to an Agreement or otherwise do not agree to these terms, you may not use the Software.
+
+This license terminates automatically upon the termination of the Agreement or Licensee's breach of these terms.
+
+Agreement: the agreement between Databricks and Licensee governing the use of the Databricks Platform Services, which shall be, with
+respect to Databricks, the Databricks Terms of Service located at www.databricks.com/termsofservice, and with respect to Databricks
+Community Edition, the Community Edition Terms of Service located at www.databricks.com/ce-termsofuse, in each case unless Licensee
+has entered into a separate written agreement with Databricks governing the use of the applicable Databricks Platform Services.
+
+Databricks Platform Services: the Databricks services or the Databricks Community Edition services, according to where the Software is used.
+
+Licensee: the user of the Software, or, if the Software is being used on behalf of a company, the company.
