@@ -1,29 +1,35 @@
-# 🎯 UNIFIED ML PIPELINE CONFIGURATION
-
-# ---------------------------------------------------------
-# MODEL CONFIGURATION
-# ---------------------------------------------------------
+# 🎯 MULTI-MODEL PIPELINE CONFIGURATION
+ 
 model:
-  type: "random_forest"
   catalog: "workspace"
   schema: "ml_credit_risk"
   base_name: "credit_risk_model"
 
-  # 🔥 NEW MODEL NAMING RULE
+# MODEL CONFIGURATION (Multi-Model Support)
+models:
+  enabled: "${MODELS_TO_TRAIN}"  
+  
+  catalog: "workspace"
+  schema: "ml_credit_risk"
+  base_name: "credit_risk_model"
+  
   naming:
     format: "{catalog}.{schema}.{base_name}_{model_type}"
 
-# ---------------------------------------------------------
+# Job Scheduling from Git Variables
+scheduling:
+  cron: "${JOB_SCHEDULE_CRON}" 
+  timezone: "UTC"
+
 # EXPERIMENT TRACKING
-# ---------------------------------------------------------
+
 experiment:
   name: "/Shared/CreditRisk_ML_Experiments"
   artifact_path: "ml_model"
   run_name_prefix: "credit_risk"
-
-# ---------------------------------------------------------
+ 
 # REGISTRY BEHAVIOR CONTROL
-# ---------------------------------------------------------
+
 registry:
   mode: "always_register"
 
@@ -44,10 +50,9 @@ registry:
     staging: "Staging"
     production: "Production"
     best: "Best"
-
-# ---------------------------------------------------------
+ 
 # METRICS CONFIGURATION
-# ---------------------------------------------------------
+
 metrics:
   classification:
     primary_metric: "test_recall"
@@ -67,10 +72,9 @@ metrics:
       test_f1: 0.50
       test_roc_auc: 0.50
       test_recall: 0.50
-
-# ---------------------------------------------------------
+ 
 # DATA CONFIGURATION
-# ---------------------------------------------------------
+
 data:
   input_table: "workspace.ml_credit_risk.credit_risk_data"
   preprocessed_table: "workspace.ml_credit_risk.credit_risk_preprocessed"
@@ -99,10 +103,9 @@ data:
     validation_size: 0.1
     random_state: 42
     stratify: true
-
-# ---------------------------------------------------------
+ 
 # PREPROCESSING CONFIGURATION
-# ---------------------------------------------------------
+
 preprocessing:
   enabled: false
   output_table: "workspace.ml_credit_risk.credit_risk_preprocessed"
@@ -122,10 +125,9 @@ preprocessing:
       enabled: true
     - name: "standard_scaling"
       enabled: true
-
-# ---------------------------------------------------------
+ 
 # MODEL EVALUATION TABLES
-# ---------------------------------------------------------
+
 tables:
   evaluation_log: "workspace.ml_credit_risk.model_evaluation_log"
   registration_log: "workspace.ml_credit_risk.model_registration_log"
@@ -133,10 +135,9 @@ tables:
   uat_results: "workspace.ml_credit_risk.uat_inference_results"
   feature_importance: "workspace.ml_credit_risk.feature_importance_log"
   model_comparison: "workspace.ml_credit_risk.model_comparison_summary"
-
-# ---------------------------------------------------------
+ 
 # WORKFLOW CONFIGURATION
-# ---------------------------------------------------------
+
 workflow:
   training:
     enabled: true
@@ -166,10 +167,9 @@ workflow:
 
   best_model_selection:
     enabled: false
-
-# ---------------------------------------------------------
+ 
 # UAT CONFIGURATION
-# ---------------------------------------------------------
+
 uat:
   enabled: true
   classification_thresholds:
@@ -186,10 +186,9 @@ uat:
   approval:
     manual_review_required: false
     notify_on_failure: true
-
-# ---------------------------------------------------------
+ 
 # LOGGING & MONITORING
-# ---------------------------------------------------------
+
 logging:
   level: "INFO"
   log_to_table: true
@@ -201,10 +200,9 @@ logging:
     feature_importance: true
     learning_curves: false
     residual_plots: false
-
-# ---------------------------------------------------------
+ 
 # SERVING ENDPOINT CONFIGURATION
-# ---------------------------------------------------------
+
 serving:
   workload_size: "Small"
   workload_type: "CPU"
@@ -214,25 +212,23 @@ serving:
   deployment_timeout: 1800
   status_check_interval: 15
 
-  # 🔥 ENDPOINT NAME DYNAMIC RULE (USED BY CREATE SERVING SCRIPT)
+  # ENDPOINT NAME DYNAMIC RULE (USED BY CREATE SERVING SCRIPT)
   endpoint_name_format: "{base_name}-{model_type}-prod"
 
   environment_vars:
     ENVIRONMENT: "production"
     LOG_LEVEL: "info"
-
-# ---------------------------------------------------------
+ 
 # DEPLOYMENT ALIASES
-# ---------------------------------------------------------
+
 aliases:
   staging: "Staging"
   production: "Production"
   best: "Best"
   baseline: "Baseline"
-
-# ---------------------------------------------------------
+ 
 # NOTIFICATION SETTINGS
-# ---------------------------------------------------------
+
 notifications:
   enabled: false
   triggers:
@@ -249,10 +245,9 @@ notifications:
     email: []
     slack: []
     teams: []
-
-# ---------------------------------------------------------
+ 
 # EXPERIMENT COMPARISON
-# ---------------------------------------------------------
+
 comparison:
   enabled: true
   comparison_scope: "model_type"
@@ -269,10 +264,9 @@ comparison:
     comparison_table: true
     performance_plot: true
     rank_models: true
-
-# ---------------------------------------------------------
+ 
 # ADVANCED SETTINGS
-# ---------------------------------------------------------
+
 advanced:
   parallel:
     enabled: false
@@ -290,10 +284,9 @@ advanced:
     enabled: false
     drift_detection: false
     performance_tracking: true
+ 
+# INFERENCE CONFIGURATION
 
-# ---------------------------------------------------------
-# INFERENCE CONFIGURATION (🔥 NEW)
-# ---------------------------------------------------------
 inference:
   enabled: true
   batch_size: 100

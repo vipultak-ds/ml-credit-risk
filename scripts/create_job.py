@@ -24,8 +24,17 @@ except Exception as e:
     sys.exit(1)  # ✅ Exit immediately on connection failure
 
 # =====================================================================
-# 2️⃣ Configuration
+# 2️⃣ Configuration & Git Variables
 # =====================================================================
+
+# 🔥 Get Git Variables
+MODELS_TO_TRAIN = os.getenv("MODELS_TO_TRAIN", "random_forest,xgboost")
+JOB_SCHEDULE_CRON = os.getenv("JOB_SCHEDULE_CRON", "disabled")
+MODEL_SERVING_CONFIG = os.getenv("MODEL_SERVING_CONFIG", "{}")
+
+# Parse models list
+models_list = [m.strip() for m in MODELS_TO_TRAIN.split(",")]
+
 repo_name = "ml-credit-risk"
 repo_path = f"/Repos/vipultak7171@gmail.com/{repo_name}"
 
@@ -33,6 +42,8 @@ print("\n" + "=" * 60)
 print("🚀 MLOPS PIPELINE ORCHESTRATION (Serverless)")
 print("=" * 60)
 print(f"📁 Repository Path: {repo_path}")
+print(f"📋 Models to train: {', '.join(models_list)}")
+print(f"📅 Job Schedule: {JOB_SCHEDULE_CRON}")
 print("-" * 60 + "\n")
 
 # =====================================================================
@@ -315,6 +326,7 @@ print("\n📊 Pipeline Summary:")
 print(f"   • DEV Job ID: {dev_job_id}")
 print(f"   • UAT Job ID: {uat_job_id}")
 print(f"   • PROD Job ID: {prod_job_id}")
+print(f"   • Models Trained: {', '.join(models_list)}")
 print("\n🔗 View results in Databricks:")
 print(f"   {os.getenv('DATABRICKS_HOST')}")
 print("=" * 60)
