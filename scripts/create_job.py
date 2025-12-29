@@ -3,7 +3,7 @@ import sys
 import time
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service import jobs
-from databricks.sdk.service.jobs import TaskDependency
+from databricks.sdk.service.jobs import TaskDependency, CronSchedule
  
 # 1️⃣ Initialize Databricks Client
 
@@ -62,15 +62,28 @@ def get_job_id(job_name):
         return None
 
 
-def create_or_update_job(job_name, tasks, auto_run=False):
+def create_or_update_job(job_name, tasks, auto_run=False, enable_schedule=False):
     """Create or update Databricks job with the given tasks."""
     try:
         existing_job_id = get_job_id(job_name)
-        job_settings = jobs.JobSettings(
-            name=job_name,
-            tasks=tasks,
-            max_concurrent_runs=1
-        )
+        
+        # 🔥 Build job settings with optional scheduling
+        job_settings_params = {
+            "name": job_name,
+            "tasks": tasks,
+            "max_concurrent_runs": 1
+        }
+        
+        # ✅ Add schedule if enabled and CRON is not "disabled"
+        if enable_schedule and JOB_SCHEDULE_CRON.lower() != "disabled":
+            job_settings_params["schedule"] = CronSchedule(
+                quartz_cron_expression=JOB_SCHEDULE_CRON,
+                timezone_id="UTC",
+                pause_status="UNPAUSED"
+            )
+            print(f"   📅 Schedule configured: {JOB_SCHEDULE_CRON}")
+        
+        job_settings = jobs.JobSettings(**job_settings_params)
 
         if existing_job_id:
             print(f"🔄 Updating job: {job_name} (ID: {existing_job_id})")
@@ -78,11 +91,7 @@ def create_or_update_job(job_name, tasks, auto_run=False):
             job_id = existing_job_id
         else:
             print(f"➕ Creating new job: {job_name}")
-            result = w.jobs.create(
-                name=job_settings.name,
-                tasks=job_settings.tasks,
-                max_concurrent_runs=1
-            )
+            result = w.jobs.create(**job_settings_params)
             job_id = result.job_id
 
         print(f"✅ Job ready: {job_name} (ID: {job_id})")
@@ -184,14 +193,22 @@ dev_tasks = [
         task_key="model_training_task",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/dev_env/train",
-            base_parameters={"environment": "development"}
+            base_parameters={
+                "environment": "development",
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN,
+                "JOB_SCHEDULE_CRON": JOB_SCHEDULE_CRON
+            }
         )
     ),
     jobs.Task(
         task_key="model_evaluation_task",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/dev_env/evaluation",
-            base_parameters={"environment": "development"}
+            base_parameters={
+                "environment": "development",
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN,
+                "JOB_SCHEDULE_CRON": JOB_SCHEDULE_CRON
+            }
         ),
         depends_on=[TaskDependency(task_key="model_training_task")]
     ),
@@ -199,7 +216,11 @@ dev_tasks = [
         task_key="model_registration_task",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/dev_env/register",
-            base_parameters={"environment": "development"}
+            base_parameters={
+                "environment": "development",
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN,
+                "JOB_SCHEDULE_CRON": JOB_SCHEDULE_CRON
+            }
         ),
         depends_on=[TaskDependency(task_key="model_evaluation_task")]
     )
@@ -208,7 +229,8 @@ dev_tasks = [
 dev_job_id, dev_run_id = create_or_update_job(
     "1. dev-ml-training-pipeline",
     tasks=dev_tasks,
-    auto_run=True
+    auto_run=True,
+    enable_schedule=True  # ✅ Schedule enabled for DEV job
 )
 
 # ✅ Check if job creation failed
@@ -233,14 +255,23 @@ uat_tasks = [
         task_key="model_staging_task",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/uat_env/uat_staging",
-            base_parameters={"alias": "Staging"}
+            base_parameters={
+                "alias": "Staging",
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN,
+                "JOB_SCHEDULE_CRON": JOB_SCHEDULE_CRON
+            }
         )
     ),
     jobs.Task(
         task_key="inference_test_task",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/uat_env/uat_inference",
-            base_parameters={"alias": "Staging", "environment": "uat"}
+            base_parameters={
+                "alias": "Staging",
+                "environment": "uat",
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN,
+                "JOB_SCHEDULE_CRON": JOB_SCHEDULE_CRON
+            }
         ),
         depends_on=[TaskDependency(task_key="model_staging_task")]
     )
@@ -249,7 +280,8 @@ uat_tasks = [
 uat_job_id, uat_run_id = create_or_update_job(
     "2. uat-ml-inference-pipeline",
     tasks=uat_tasks,
-    auto_run=True
+    auto_run=True,
+    enable_schedule=False  # ✅ No schedule for UAT (runs after DEV)
 )
 
 # ✅ Check if job creation failed
@@ -274,14 +306,23 @@ prod_tasks = [
         task_key="model_promotion_task",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/prod_env/prod_promotion",
-            base_parameters={"alias": "Production", "action": "promote"}
+            base_parameters={
+                "alias": "Production",
+                "action": "promote",
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN,
+                "JOB_SCHEDULE_CRON": JOB_SCHEDULE_CRON
+            }
         )
     ),
     jobs.Task(
         task_key="serving_endpoint_task",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/prod_env/prod_create_serving",
-            base_parameters={"environment": "prod"}
+            base_parameters={
+                "environment": "prod",
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN,
+                "JOB_SCHEDULE_CRON": JOB_SCHEDULE_CRON
+            }
         ),
         depends_on=[TaskDependency(task_key="model_promotion_task")]
     ),
@@ -289,7 +330,12 @@ prod_tasks = [
         task_key="model_inference_production",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/prod_env/prod_inference",
-            base_parameters={"alias": "Production", "environment": "prod"}
+            base_parameters={
+                "alias": "Production",
+                "environment": "prod",
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN,
+                "JOB_SCHEDULE_CRON": JOB_SCHEDULE_CRON
+            }
         ),
         depends_on=[TaskDependency(task_key="serving_endpoint_task")]
     )
@@ -298,7 +344,8 @@ prod_tasks = [
 prod_job_id, prod_run_id = create_or_update_job(
     "3. prod-ml-deployment-pipeline",
     tasks=prod_tasks,
-    auto_run=True
+    auto_run=True,
+    enable_schedule=False  # ✅ No schedule for PROD (runs after UAT)
 )
 
 # ✅ Check if job creation failed
@@ -327,6 +374,10 @@ print(f"   • DEV Job ID: {dev_job_id}")
 print(f"   • UAT Job ID: {uat_job_id}")
 print(f"   • PROD Job ID: {prod_job_id}")
 print(f"   • Models Trained: {', '.join(models_list)}")
+if JOB_SCHEDULE_CRON.lower() != "disabled":
+    print(f"   • Schedule: {JOB_SCHEDULE_CRON}")
+else:
+    print(f"   • Schedule: Manual execution only")
 print("\n🔗 View results in Databricks:")
 print(f"   {os.getenv('DATABRICKS_HOST')}")
 print("=" * 60)
