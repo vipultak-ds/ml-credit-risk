@@ -1,13 +1,6 @@
-# 🎯 MULTI-MODEL PIPELINE CONFIGURATION
- 
-model:
-  catalog: "workspace"
-  schema: "ml_credit_risk"
-  base_name: "credit_risk_model"
-
-# MODEL CONFIGURATION (Multi-Model Support)
+ # MODEL CONFIGURATION (Multi-Model Support)
 models:
-  enabled: "${MODELS_TO_TRAIN}"  
+  enabled: "${MODELS_TO_TRAIN}"
   
   catalog: "workspace"
   schema: "ml_credit_risk"
@@ -18,7 +11,7 @@ models:
 
 # Job Scheduling from Git Variables
 scheduling:
-  cron: "${JOB_SCHEDULE_CRON}" 
+  cron: "${JOB_SCHEDULE_CRON}"  # ✅ This matches (value: disabled)
   timezone: "UTC"
 
 # EXPERIMENT TRACKING
@@ -132,7 +125,7 @@ tables:
   evaluation_log: "workspace.ml_credit_risk.model_evaluation_log"
   registration_log: "workspace.ml_credit_risk.model_registration_log"
   best_model_metadata: "workspace.ml_credit_risk.best_model_metadata"
-  uat_results: "workspace.ml_credit_risk.uat_inference_results"
+  # uat_results: "workspace.ml_credit_risk.uat_inference_results"
   feature_importance: "workspace.ml_credit_risk.feature_importance_log"
   model_comparison: "workspace.ml_credit_risk.model_comparison_summary"
  
@@ -168,24 +161,24 @@ workflow:
   best_model_selection:
     enabled: false
  
-# UAT CONFIGURATION
+# # UAT CONFIGURATION
 
-uat:
-  enabled: true
-  classification_thresholds:
-    min_accuracy: 0.70
-    min_f1: 0.60
-    min_roc_auc: 0.75
-    min_recall: 0.75
-    max_inference_time_ms: 500
+# uat:
+#   enabled: true
+#   classification_thresholds:
+#     min_accuracy: 0.70
+#     min_f1: 0.60
+#     min_roc_auc: 0.75
+#     min_recall: 0.75
+#     max_inference_time_ms: 500
  
-  test_data:
-    use_holdout: true
-    sample_size: 1000
+#   test_data:
+#     use_holdout: true
+#     sample_size: 1000
 
-  approval:
-    manual_review_required: false
-    notify_on_failure: true
+#   approval:
+#     manual_review_required: false
+#     notify_on_failure: true
  
 # LOGGING & MONITORING
 
@@ -221,11 +214,11 @@ serving:
  
 # DEPLOYMENT ALIASES
 
-aliases:
-  staging: "Staging"
-  production: "Production"
-  best: "Best"
-  baseline: "Baseline"
+# aliases:
+#   staging: "Staging"
+#   production: "Production"
+#   best: "Best"
+#   baseline: "Baseline"
  
 # NOTIFICATION SETTINGS
 
@@ -267,27 +260,27 @@ comparison:
  
 # ADVANCED SETTINGS
 
-advanced:
-  parallel:
-    enabled: false
-    max_workers: 4
+# advanced:
+#   parallel:
+#     enabled: false
+#     max_workers: 4
 
-  checkpointing:
-    enabled: true
-    checkpoint_dir: "/dbfs/ml/checkpoints"
+#   checkpointing:
+#     enabled: true
+#     checkpoint_dir: "/dbfs/ml/checkpoints"
 
-  explainability:
-    enabled: false
-    methods: ["shap", "lime"]
+#   explainability:
+#     enabled: false
+#     methods: ["shap", "lime"]
 
-  monitoring:
-    enabled: false
-    drift_detection: false
-    performance_tracking: true
+#   monitoring:
+#     enabled: false
+#     drift_detection: false
+#     performance_tracking: true
  
-# INFERENCE CONFIGURATION
+# # INFERENCE CONFIGURATION
 
-inference:
-  enabled: true
-  batch_size: 100
-  output_table_format: "{catalog}.{schema}.prod_inference_{model_type}"
+# inference:
+#   enabled: true
+#   batch_size: 100
+#   output_table_format: "{catalog}.{schema}.prod_inference_{model_type}"

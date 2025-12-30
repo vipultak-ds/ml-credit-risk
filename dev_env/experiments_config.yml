@@ -186,3 +186,63 @@ models:
           objective: "binary:logistic"
           eval_metric: "auc"
           random_state: 42
+
+  # 📈 LOGISTIC REGRESSION CONFIGURATION
+
+  logistic_regression:
+  experiment_name: "credit_risk_lr_experiment"
+  primary_metric: "recall"
+
+  model_capabilities:
+    probabilistic: true
+    linear_model: true
+
+
+    experiments:
+
+      - name: "lr_baseline"
+        params:
+          penalty: "l2"
+          C: 1.0
+          solver: "lbfgs"
+          max_iter: 1000
+          class_weight: "balanced"
+          random_state: 42
+
+      - name: "lr_high_recall"
+        params:
+          penalty: "l2"
+          C: 0.5
+          solver: "lbfgs"
+          max_iter: 2000
+          class_weight: {0: 1, 1: 3}
+          random_state: 42
+
+      - name: "lr_regularized"
+        params:
+          penalty: "l1"
+          C: 0.1
+          solver: "liblinear"
+          max_iter: 2000
+          class_weight: "balanced"
+          random_state: 42
+
+      - name: "lr_elasticnet"
+        params:
+          penalty: "elasticnet"
+          C: 0.5
+          l1_ratio: 0.5
+          solver: "saga"
+          max_iter: 3000
+          class_weight: "balanced"
+          random_state: 42
+
+      - name: "lr_production"
+        params:
+          penalty: "l2"
+          C: 1.2
+          solver: "lbfgs"
+          max_iter: 1500
+          class_weight: "balanced"
+          random_state: 42
+
