@@ -1,7 +1,6 @@
 models:
 
   # 🌲 RANDOM FOREST CONFIGURATION
-
   random_forest:
     experiment_name: "credit_risk_rf_experiment"
     primary_metric: "recall"
@@ -157,7 +156,6 @@ models:
           oob_score: true
 
   # 🚀 XGBOOST CONFIGURATION
-
   xgboost:
     experiment_name: "credit_risk_xgb_experiment"
     primary_metric: "recall"
@@ -188,15 +186,13 @@ models:
           random_state: 42
 
   # 📈 LOGISTIC REGRESSION CONFIGURATION
-
   logistic_regression:
-  experiment_name: "credit_risk_lr_experiment"
-  primary_metric: "recall"
+    experiment_name: "credit_risk_lr_experiment"
+    primary_metric: "recall"
 
-  model_capabilities:
-    probabilistic: true
-    linear_model: true
-
+    model_capabilities:
+      probabilistic: true
+      linear_model: true
 
     experiments:
 
@@ -245,4 +241,3 @@ models:
           max_iter: 1500
           class_weight: "balanced"
           random_state: 42
-
