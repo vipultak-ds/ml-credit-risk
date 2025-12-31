@@ -10,64 +10,286 @@ on:
       - "uat_env/**"
       - "scripts/**"
       - "pipeline_config.yml"
-      - "config.yml"
+      - "experiments_config.yml"  # ✅ CHANGE 1: Added
       - "requirements.txt"
       - ".github/workflows/ci-cd-pipeline.yml"
+  
+  # ✅ CHANGE 2: Manual trigger option (optional but useful)
+  workflow_dispatch:
+    inputs:
+      models_to_train:
+        description: 'Models to train (comma-separated or "all")'
+        required: false
+        default: 'all'
+        type: string
+      environment:
+        description: 'Target environment'
+        required: false
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - uat
+          - prod
 
 env:
   DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
   DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+  # ✅ CHANGE 3: GitHub Variables
+  MODELS_TO_TRAIN: ${{ vars.MODELS_TO_TRAIN || 'all' }}
+  MODEL_SERVING_CONFIG: ${{ vars.MODEL_SERVING_CONFIG || '{}' }}  # ✅ NEW
 
 jobs:
-  deploy:
-    name: Deploy to Databricks
+  # =========================================================================
+  # Job 1: Validate Configuration
+  # =========================================================================
+  validate:
+    name: Validate Models Configuration
     runs-on: ubuntu-latest
-
+    outputs:
+      models_to_train: ${{ steps.determine_models.outputs.models }}
+      models_count: ${{ steps.determine_models.outputs.count }}
+    
     steps:
-      # Step 1: Checkout the repo
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      # Step 2: Set up Python 3.10
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Determine Models to Train
+        id: determine_models
+        run: |
+          python3 << 'EOF'
+          import yaml
+          import os
+          import sys
+          
+          # ✅ Read models from GitHub variable or workflow input
+          models_input = "${{ github.event.inputs.models_to_train || env.MODELS_TO_TRAIN }}"
+          
+          print(f"🔍 Input received: '{models_input}'")
+          
+          # Load available models from experiments_config.yml
+          try:
+              with open("experiments_config.yml", "r") as f:
+                  config = yaml.safe_load(f)
+              available_models = list(config.get("models", {}).keys())
+          except FileNotFoundError:
+              print("❌ experiments_config.yml not found!")
+              sys.exit(1)
+          except Exception as e:
+              print(f"❌ Error reading config: {e}")
+              sys.exit(1)
+          
+          print(f"📋 Available models in config: {available_models}")
+          
+          # Handle empty or None
+          if not models_input or models_input.strip() == "" or models_input.lower() in ["none", "null"]:
+              print("❌ MODELS_TO_TRAIN is not set!")
+              print(f"   Set GitHub variable MODELS_TO_TRAIN to one of:")
+              print(f"   - Specific models: 'random_forest,xgboost'")
+              print(f"   - All models: 'all'")
+              print(f"   Available: {available_models}")
+              sys.exit(1)
+          
+          # Handle "all"
+          if models_input.lower().strip() == "all":
+              models_to_train = available_models
+              print(f"✅ Training ALL models: {models_to_train}")
+          else:
+              # Parse comma-separated
+              models_to_train = [m.strip() for m in models_input.split(",") if m.strip()]
+              
+              # Validate
+              invalid = [m for m in models_to_train if m not in available_models]
+              if invalid:
+                  print(f"❌ Invalid models: {invalid}")
+                  print(f"   Available: {available_models}")
+                  sys.exit(1)
+              
+              print(f"✅ Training selected models: {models_to_train}")
+          
+          # Export for next job
+          models_str = ",".join(models_to_train)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"models={models_str}\n")
+              f.write(f"count={len(models_to_train)}\n")
+          
+          print(f"\n📤 Output: {models_str}")
+          print(f"📊 Count: {len(models_to_train)}")
+          EOF
+
+      - name: Display Validation Results
+        run: |
+          echo "✅ Validation completed successfully!"
+          echo "📋 Models to train: ${{ steps.determine_models.outputs.models }}"
+          echo "📊 Total models: ${{ steps.determine_models.outputs.count }}"
+
+  # =========================================================================
+  # Job 2: Deploy Infrastructure
+  # =========================================================================
+  deploy:
+    name: Deploy to Databricks
+    runs-on: ubuntu-latest
+    needs: validate
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
           cache: 'pip'
 
-      # Step 3: Install dependencies
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install databricks-sdk
 
-      # Step 4: Sync Repository to Databricks Repos
       - name: Sync Git Repository to Databricks Repos
         run: python scripts/add_repo.py
 
-      # Step 5: Create/Update Databricks Jobs
+      # ✅ CHANGE 4: Pass both variables
       - name: Create or Update Databricks Jobs
+        env:
+          MODELS_TO_TRAIN: ${{ needs.validate.outputs.models_to_train }}
+          MODEL_SERVING_CONFIG: ${{ env.MODEL_SERVING_CONFIG }}
         run: python scripts/create_job.py
 
-      # -------------------------
-      # 🔔 Slack Notification Steps
-      # -------------------------
+      - name: Display Deployment Info
+        run: |
+          echo "🎯 Deployment Summary:"
+          echo "   Models: ${{ needs.validate.outputs.models_to_train }}"
+          echo "   Count: ${{ needs.validate.outputs.models_count }}"
+          echo "   Branch: ${{ github.ref }}"
+          echo "   Commit: ${{ github.sha }}"
 
+  # =========================================================================
+  # Job 3: Trigger Training (Optional)
+  # =========================================================================
+  trigger_training:
+    name: Trigger Model Training
+    runs-on: ubuntu-latest
+    needs: [validate, deploy]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Databricks CLI
+        run: pip install databricks-sdk
+
+      - name: Trigger Training Job
+        env:
+          MODELS_TO_TRAIN: ${{ needs.validate.outputs.models_to_train }}
+        run: |
+          python3 << 'EOF'
+          from databricks.sdk import WorkspaceClient
+          import os
+          import json
+          
+          w = WorkspaceClient(
+              host=os.environ["DATABRICKS_HOST"],
+              token=os.environ["DATABRICKS_TOKEN"]
+          )
+          
+          models = os.environ["MODELS_TO_TRAIN"]
+          
+          # Find job by name (adjust this to your job name)
+          job_name = "1. dev-ml-training-pipeline"
+          
+          print(f"🔍 Looking for job: {job_name}")
+          
+          jobs = w.jobs.list()
+          target_job = None
+          
+          for job in jobs:
+              if job.settings.name == job_name:
+                  target_job = job
+                  break
+          
+          if not target_job:
+              print(f"❌ Job '{job_name}' not found!")
+              exit(1)
+          
+          print(f"✅ Found job ID: {target_job.job_id}")
+          print(f"🚀 Triggering training with models: {models}")
+          
+          # Trigger job with models parameter
+          run = w.jobs.run_now(
+              job_id=target_job.job_id,
+              notebook_params={"MODELS_TO_TRAIN": models}
+          )
+          
+          print(f"✅ Training triggered!")
+          print(f"   Run ID: {run.run_id}")
+          print(f"   Models: {models}")
+          
+          EOF
+
+  # =========================================================================
+  # Notifications
+  # =========================================================================
+  notify_success:
+    name: Notify Success
+    runs-on: ubuntu-latest
+    needs: [validate, deploy, trigger_training]
+    if: success()
+    
+    steps:
       - name: Slack Notification - Success
-        if: success()
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
               "text": ":white_check_mark: *CI/CD Success* — Databricks MLOps Pipeline",
               "blocks": [
-                { "type": "section", "text": { "type": "mrkdwn", "text": "*✅ CI/CD Success*\nDatabricks MLOps pipeline completed successfully." } },
-                { "type": "section", "fields": [
-                    { "type": "mrkdwn", "text": "*Repo:*\n${{ github.repository }}" },
-                    { "type": "mrkdwn", "text": "*Branch:*\n${{ github.ref }}" },
-                    { "type": "mrkdwn", "text": "*Commit:*\n`${{ github.sha }}`" },
-                    { "type": "mrkdwn", "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open Run>" }
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*✅ CI/CD Success*\nDatabricks MLOps pipeline completed successfully."
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repo:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Models:*\n`${{ needs.validate.outputs.models_to_train }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Count:*\n${{ needs.validate.outputs.models_count }} models"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n`${{ github.sha }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open Run>"
+                    }
                   ]
                 }
               ]
@@ -75,22 +297,149 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
+  notify_failure:
+    name: Notify Failure
+    runs-on: ubuntu-latest
+    needs: [validate, deploy, trigger_training]
+    if: failure()
+    
+    steps:
       - name: Slack Notification - Failure
-        if: failure()
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
               "text": ":x: *CI/CD Failure* — Databricks MLOps Pipeline",
               "blocks": [
-                { "type": "section", "text": { "type": "mrkdwn", "text": "*❌ CI/CD Failed*\nPlease check the Actions logs for details." } },
-                { "type": "section", "fields": [
-                    { "type": "mrkdwn", "text": "*Repo:*\n${{ github.repository }}" },
-                    { "type": "mrkdwn", "text": "*Branch:*\n${{ github.ref }}" },
-                    { "type": "mrkdwn", "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open Run>" }
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ CI/CD Failed*\nPlease check the Actions logs for details."
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repo:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Failed Job:*\n${{ needs.validate.result }} / ${{ needs.deploy.result }} / ${{ needs.trigger_training.result }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open Run>"
+                    }
                   ]
                 }
               ]
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+
+
+
+# name: Databricks MLOps CI/CD
+
+# on:
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - "dev_env/**"
+#       - "prod_env/**"
+#       - "uat_env/**"
+#       - "scripts/**"
+#       - "pipeline_config.yml"
+#       - "config.yml"
+#       - "requirements.txt"
+#       - ".github/workflows/ci-cd-pipeline.yml"
+
+# env:
+#   DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+#   DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+# jobs:
+#   deploy:
+#     name: Deploy to Databricks
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       # Step 1: Checkout the repo
+#       - name: Checkout Repository
+#         uses: actions/checkout@v3
+
+#       # Step 2: Set up Python 3.10
+#       - name: Setup Python
+#         uses: actions/setup-python@v4
+#         with:
+#           python-version: '3.10'
+#           cache: 'pip'
+
+#       # Step 3: Install dependencies
+#       - name: Install Dependencies
+#         run: |
+#           python -m pip install --upgrade pip
+#           pip install -r requirements.txt
+#           pip install databricks-sdk
+
+#       # Step 4: Sync Repository to Databricks Repos
+#       - name: Sync Git Repository to Databricks Repos
+#         run: python scripts/add_repo.py
+
+#       # Step 5: Create/Update Databricks Jobs
+#       - name: Create or Update Databricks Jobs
+#         run: python scripts/create_job.py
+
+#       # -------------------------
+#       # 🔔 Slack Notification Steps
+#       # -------------------------
+
+#       - name: Slack Notification - Success
+#         if: success()
+#         uses: slackapi/slack-github-action@v1.24.0
+#         with:
+#           payload: |
+#             {
+#               "text": ":white_check_mark: *CI/CD Success* — Databricks MLOps Pipeline",
+#               "blocks": [
+#                 { "type": "section", "text": { "type": "mrkdwn", "text": "*✅ CI/CD Success*\nDatabricks MLOps pipeline completed successfully." } },
+#                 { "type": "section", "fields": [
+#                     { "type": "mrkdwn", "text": "*Repo:*\n${{ github.repository }}" },
+#                     { "type": "mrkdwn", "text": "*Branch:*\n${{ github.ref }}" },
+#                     { "type": "mrkdwn", "text": "*Commit:*\n`${{ github.sha }}`" },
+#                     { "type": "mrkdwn", "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open Run>" }
+#                   ]
+#                 }
+#               ]
+#             }
+#         env:
+#           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+#       - name: Slack Notification - Failure
+#         if: failure()
+#         uses: slackapi/slack-github-action@v1.24.0
+#         with:
+#           payload: |
+#             {
+#               "text": ":x: *CI/CD Failure* — Databricks MLOps Pipeline",
+#               "blocks": [
+#                 { "type": "section", "text": { "type": "mrkdwn", "text": "*❌ CI/CD Failed*\nPlease check the Actions logs for details." } },
+#                 { "type": "section", "fields": [
+#                     { "type": "mrkdwn", "text": "*Repo:*\n${{ github.repository }}" },
+#                     { "type": "mrkdwn", "text": "*Branch:*\n${{ github.ref }}" },
+#                     { "type": "mrkdwn", "text": "*Run:*\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Open Run>" }
+#                   ]
+#                 }
+#               ]
+#             }
+#         env:
+#           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

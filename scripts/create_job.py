@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json  # ✅ ADDED for serving config
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.service import jobs
 from databricks.sdk.service.jobs import TaskDependency
@@ -24,11 +25,55 @@ except Exception as e:
 # 2️⃣ Configuration & Git Variables
 # =====================================================================
 
-MODELS_TO_TRAIN = os.getenv("MODELS_TO_TRAIN", "random_forest,xgboost")
-JOB_SCHEDULE_CRON = os.getenv("JOB_SCHEDULE_CRON", "disabled")
-MODEL_SERVING_CONFIG = os.getenv("MODEL_SERVING_CONFIG", "{}")
+# ✅ Get MODELS_TO_TRAIN from environment (set by GitHub Actions)
+MODELS_TO_TRAIN = os.getenv("MODELS_TO_TRAIN", "").strip()
 
-models_list = [m.strip() for m in MODELS_TO_TRAIN.split(",")]
+# ✅ Validate early - before creating any jobs
+if not MODELS_TO_TRAIN or MODELS_TO_TRAIN.lower() in ["none", "null", "undefined", ""]:
+    print("\n" + "=" * 70)
+    print("❌ ERROR: MODELS_TO_TRAIN is not set!")
+    print("=" * 70)
+    print("\n📋 Available options:")
+    print("   1. Set GitHub repository variable:")
+    print("      Settings → Secrets and variables → Actions → Variables")
+    print("      Name: MODELS_TO_TRAIN")
+    print("      Value: random_forest,xgboost  (or 'all')")
+    print("\n   2. Or use workflow_dispatch to manually trigger with models")
+    print("\n   3. Models should match those in experiments_config.yml")
+    print("\n💡 Example values:")
+    print("   • 'random_forest,xgboost,logistic_regression'")
+    print("   • 'random_forest'")
+    print("   • 'all' (trains all models in experiments_config.yml)")
+    print("=" * 70)
+    sys.exit(1)
+
+# ✅ Handle "all" keyword or parse comma-separated list
+if MODELS_TO_TRAIN.lower() == "all":
+    models_list = ["all"]
+    print(f"📋 Training ALL models from experiments_config.yml")
+else:
+    models_list = [m.strip() for m in MODELS_TO_TRAIN.split(",") if m.strip()]
+    if not models_list:
+        print(f"❌ ERROR: No valid models found in MODELS_TO_TRAIN='{MODELS_TO_TRAIN}'")
+        sys.exit(1)
+
+# ✅ NEW: Get and validate MODEL_SERVING_CONFIG
+JOB_SCHEDULE_CRON = os.getenv("JOB_SCHEDULE_CRON", "disabled")
+MODEL_SERVING_CONFIG = os.getenv("MODEL_SERVING_CONFIG", "{}").strip()
+
+# Validate serving config is valid JSON
+try:
+    if MODEL_SERVING_CONFIG and MODEL_SERVING_CONFIG != "{}":
+        serving_config_dict = json.loads(MODEL_SERVING_CONFIG)
+        print(f"✅ Serving config loaded: {len(serving_config_dict)} model(s) configured")
+    else:
+        serving_config_dict = {}
+        print(f"⚠️  No serving config provided (using empty config)")
+except json.JSONDecodeError as e:
+    print(f"❌ ERROR: Invalid JSON in MODEL_SERVING_CONFIG")
+    print(f"   Error: {e}")
+    print(f"   Value: {MODEL_SERVING_CONFIG[:100]}...")
+    sys.exit(1)
 
 repo_name = "ml-credit-risk"
 repo_path = f"/Repos/vipultak7171@gmail.com/{repo_name}"
@@ -37,8 +82,15 @@ print("\n" + "=" * 60)
 print("🚀 MLOPS PIPELINE ORCHESTRATION (Serverless)")
 print("=" * 60)
 print(f"📁 Repository Path: {repo_path}")
-print(f"📋 Models to train: {', '.join(models_list)}")
+print(f"📋 Models to train: {MODELS_TO_TRAIN}")
+if MODELS_TO_TRAIN.lower() != "all":
+    print(f"   Parsed as: {', '.join(models_list)}")
 print(f"📅 Job Schedule: {JOB_SCHEDULE_CRON}")
+print(f"🌐 Serving Config: {len(serving_config_dict)} model(s)")
+if serving_config_dict:
+    for model_key, config in serving_config_dict.items():
+        active_status = "✅" if config.get('active', False) else "⚪"
+        print(f"   {active_status} {model_key}: {config.get('model_name', 'N/A')} (traffic: {config.get('traffic', 0)}%)")
 print("-" * 60 + "\n")
 
 # =====================================================================
@@ -108,22 +160,49 @@ print("-" * 60)
 
 dev_tasks = []
 
-# 🔥 PARALLEL TRAINING TASKS
-for model in models_list:
+# ✅ Handle "all" keyword vs specific models
+if MODELS_TO_TRAIN.lower() == "all":
+    # Create single task that will train all models
     dev_tasks.append(
         jobs.Task(
-            task_key=f"train_{model}",
+            task_key="train_all_models",
             notebook_task=jobs.NotebookTask(
                 notebook_path=f"{repo_path}/dev_env/train",
                 base_parameters={
                     "environment": "development",
-                    "MODELS_TO_TRAIN": model
+                    "MODELS_TO_TRAIN": "all"
                 }
             )
         )
     )
+    print("   📦 Created task: train_all_models (will train all models from config)")
+    
+else:
+    # Create parallel tasks for each model
+    for model in models_list:
+        dev_tasks.append(
+            jobs.Task(
+                task_key=f"train_{model}",
+                notebook_task=jobs.NotebookTask(
+                    notebook_path=f"{repo_path}/dev_env/train",
+                    base_parameters={
+                        "environment": "development",
+                        "MODELS_TO_TRAIN": model
+                    }
+                )
+            )
+        )
+        print(f"   📦 Created task: train_{model}")
 
-# 🔒 REGISTRATION DEPENDS ON ALL TRAINING TASKS
+# ✅ Registration depends on all training tasks
+if MODELS_TO_TRAIN.lower() == "all":
+    registration_depends_on = [TaskDependency(task_key="train_all_models")]
+else:
+    registration_depends_on = [
+        TaskDependency(task_key=f"train_{model}") 
+        for model in models_list
+    ]
+
 dev_tasks.append(
     jobs.Task(
         task_key="model_registration_task",
@@ -131,17 +210,16 @@ dev_tasks.append(
             notebook_path=f"{repo_path}/dev_env/register",
             base_parameters={
                 "environment": "development",
-                "MODELS_TO_TRAIN": ",".join(models_list)
+                "MODELS_TO_TRAIN": MODELS_TO_TRAIN
             }
         ),
-        depends_on=[
-            TaskDependency(task_key=f"train_{model}")
-            for model in models_list
-        ]
+        depends_on=registration_depends_on
     )
 )
+print("   📦 Created task: model_registration_task")
 
-# 🚀 NEW: SERVING ENDPOINT CREATION (DEPENDS ON REGISTRATION)
+# ✅ Serving endpoint creation (depends on registration)
+# IMPORTANT: Pass MODEL_SERVING_CONFIG to notebook
 dev_tasks.append(
     jobs.Task(
         task_key="create_serving_endpoint_task",
@@ -149,7 +227,7 @@ dev_tasks.append(
             notebook_path=f"{repo_path}/dev_env/create_serving_endpoint",
             base_parameters={
                 "environment": "development",
-                "MODEL_SERVING_CONFIG": MODEL_SERVING_CONFIG
+                "MODEL_SERVING_CONFIG": MODEL_SERVING_CONFIG  # ✅ Pass the config
             }
         ),
         depends_on=[
@@ -157,6 +235,7 @@ dev_tasks.append(
         ]
     )
 )
+print("   📦 Created task: create_serving_endpoint_task")
 
 dev_job_id, dev_run_id = create_or_update_job(
     "1. dev-ml-training-pipeline",
@@ -164,11 +243,14 @@ dev_job_id, dev_run_id = create_or_update_job(
     auto_run=True
 )
 
+print(f"\n✅ DEV job created/updated: Job ID {dev_job_id}")
+print(f"🚀 Training started: Run ID {dev_run_id}")
+
 if not wait_for_job_completion(dev_job_id, dev_run_id, "DEV Training", 25):
     handle_job_failure("DEV Training Pipeline", "DEVELOPMENT")
 
 # =====================================================================
-# 5️⃣ UAT JOB (COMMENTED)
+# 5️⃣ UAT JOB (COMMENTED - UNCHANGED)
 # =====================================================================
 
 # print("\n[STEP 2/3] 🧪 Creating UAT Pipeline...")
@@ -202,7 +284,7 @@ if not wait_for_job_completion(dev_job_id, dev_run_id, "DEV Training", 25):
 #     handle_job_failure("UAT Pipeline", "UAT")
 
 # =====================================================================
-# 6️⃣ PROD JOB (COMMENTED)
+# 6️⃣ PROD JOB (COMMENTED - UNCHANGED)
 # =====================================================================
 
 # print("\n[STEP 3/3] 🚀 Creating PROD Deployment Pipeline...")
@@ -248,10 +330,13 @@ if not wait_for_job_completion(dev_job_id, dev_run_id, "DEV Training", 25):
 # =====================================================================
 
 print("\n🎉 DEV MLOPS PIPELINE COMPLETED SUCCESSFULLY!")
-print(f"Models trained in parallel: {', '.join(models_list)}")
+print(f"Models configured: {MODELS_TO_TRAIN}")
+if MODELS_TO_TRAIN.lower() != "all":
+    print(f"Models trained in parallel: {', '.join(models_list)}")
+if serving_config_dict:
+    print(f"Serving configured for: {', '.join(serving_config_dict.keys())}")
 sys.exit(0)
-
-
+ 
 ### for sequantial job and task 
 
 # import os
