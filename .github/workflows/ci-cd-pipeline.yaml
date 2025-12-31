@@ -10,7 +10,7 @@ on:
       - "pipeline_config.yml"
       - "experiments_config.yml"
       - "requirements.txt"
-      - ".github/workflows/ci-cd-pipeline.yml"
+      - ".github/workflows/ci-cd-pipeline.yaml"
 
 env:
   DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
