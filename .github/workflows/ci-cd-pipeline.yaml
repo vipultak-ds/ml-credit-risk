@@ -77,9 +77,9 @@ jobs:
           
           # Load available models from experiments_config.yml
           try:
-              with open("experiments_config.yml", "r") as f:
-                  config = yaml.safe_load(f)
-              available_models = list(config.get("models", {}).keys())
+              with open("dev_env/experiments_config.yml", "r") as f:
+                config = yaml.safe_load(f)                  
+                available_models = list(config.get("models", {}).keys())
           except FileNotFoundError:
               print("❌ experiments_config.yml not found!")
               sys.exit(1)
