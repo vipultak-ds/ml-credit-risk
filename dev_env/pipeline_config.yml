@@ -30,8 +30,11 @@ registry:
     enabled: true
     metrics_to_compare:
       - "test_accuracy"
+      - "test_precision"
+      - "test_recall"
       - "test_f1"
       - "test_roc_auc"
+      - "train_accuracy"
     tolerance: 0.001
 
   versioning:
