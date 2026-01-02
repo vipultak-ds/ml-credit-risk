@@ -167,7 +167,7 @@ if MODELS_TO_TRAIN.lower() == "all":
         jobs.Task(
             task_key="train_all_models",
             notebook_task=jobs.NotebookTask(
-                notebook_path=f"{repo_path}/dev_env/train.ipynb",
+                notebook_path=f"{repo_path}/dev_env/train",
                 base_parameters={
                     "environment": "development",
                     "MODELS_TO_TRAIN": "all"
@@ -184,7 +184,7 @@ else:
             jobs.Task(
                 task_key=f"train_{model}",
                 notebook_task=jobs.NotebookTask(
-                    notebook_path=f"{repo_path}/dev_env/train.ipynb",
+                    notebook_path=f"{repo_path}/dev_env/train",
                     base_parameters={
                         "environment": "development",
                         "MODELS_TO_TRAIN": model
@@ -207,7 +207,7 @@ dev_tasks.append(
     jobs.Task(
         task_key="model_registration_task",
         notebook_task=jobs.NotebookTask(
-            notebook_path=f"{repo_path}/dev_env/register.ipynb",
+            notebook_path=f"{repo_path}/dev_env/register",
             base_parameters={
                 "environment": "development",
                 "MODELS_TO_TRAIN": MODELS_TO_TRAIN
