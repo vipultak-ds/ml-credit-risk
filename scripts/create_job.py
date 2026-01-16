@@ -224,7 +224,7 @@ dev_tasks.append(
     jobs.Task(
         task_key="create_serving_endpoint_task",
         notebook_task=jobs.NotebookTask(
-            notebook_path=f"{repo_path}/dev_env/create_serving_endpoint",
+            notebook_path=f"{repo_path}/dev_env/create_serving_endpoint_env_var",
             base_parameters={
                 "environment": "development",
                 "MODEL_SERVING_CONFIG": MODEL_SERVING_CONFIG  # ✅ Pass the config
