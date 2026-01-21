@@ -155,7 +155,7 @@ dev_tasks.append(
     jobs.Task(
         task_key="model_evaluation_task",
         notebook_task=jobs.NotebookTask(
-            notebook_path=f"{repo_path}/Model_part_2/model_evaluation"
+            notebook_path=f"{repo_path}/Model_part_2/model_evaluation.py"
         ),
         depends_on=evaluation_depends_on
     )
