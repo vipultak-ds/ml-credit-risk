@@ -20,7 +20,7 @@ except Exception as e:
     print(f"❌ Databricks client initialization failed: {e}")
     sys.exit(1)
 
-# ✅ FIX: Define MODELS_TO_TRAIN (since you removed git/env logic)
+# ✅ FIX: Define MODELS_TO_TRAIN
 MODELS_TO_TRAIN = "all"   # change this if needed like: "random_forest,xgboost"
 
 # ✅ FIX: Create models_list safely
@@ -98,7 +98,7 @@ def handle_job_failure(job_name, stage):
     sys.exit(1)
 
 # =====================================================================
-# 4️⃣ DEV JOB — PARALLEL MODEL TRAINING
+# 4️⃣ DEV JOB — Ingestion → Parallel Training → Register
 # =====================================================================
 
 print("\n[STEP 1/1] 🛠️ Creating DEV Training Pipeline...")
@@ -106,17 +106,29 @@ print("-" * 60)
 
 dev_tasks = []
 
-# Handle "all" keyword vs specific models
+# ✅ STEP 1: Data Ingestion + Preprocessing Task (FIRST)
+dev_tasks.append(
+    jobs.Task(
+        task_key="data_ingestion_preprocessing",
+        notebook_task=jobs.NotebookTask(
+            notebook_path=f"{repo_path}/Model_part_2/preprocessing"
+        )
+    )
+)
+print("   📦 Created task: data_ingestion_preprocessing")
+
+# ✅ STEP 2: Training Tasks (DEPEND on ingestion)
 if MODELS_TO_TRAIN.lower() == "all":
     dev_tasks.append(
         jobs.Task(
             task_key="train_all_models",
             notebook_task=jobs.NotebookTask(
                 notebook_path=f"{repo_path}/Model_part_2/train"
-            )
+            ),
+            depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")]
         )
     )
-    print("   📦 Created task: train_all_models")
+    print("   📦 Created task: train_all_models (depends on ingestion)")
 else:
     for model in models_list:
         dev_tasks.append(
@@ -124,12 +136,13 @@ else:
                 task_key=f"train_{model}",
                 notebook_task=jobs.NotebookTask(
                     notebook_path=f"{repo_path}/Model_part_2/train"
-                )
+                ),
+                depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")]
             )
         )
-        print(f"   📦 Created task: train_{model}")
+        print(f"   📦 Created task: train_{model} (depends on ingestion)")
 
-# Registration depends on all training tasks
+# ✅ STEP 3: Registration depends on training tasks
 if MODELS_TO_TRAIN.lower() == "all":
     registration_depends_on = [TaskDependency(task_key="train_all_models")]
 else:
@@ -147,7 +160,7 @@ dev_tasks.append(
         depends_on=registration_depends_on
     )
 )
-print("   📦 Created task: model_registration_task")
+print("   📦 Created task: model_registration_task (depends on training)")
 
 dev_job_id, dev_run_id = create_or_update_job(
     "1. dev-ml-training-pipeline",
@@ -156,7 +169,7 @@ dev_job_id, dev_run_id = create_or_update_job(
 )
 
 print(f"\n✅ DEV job created/updated: Job ID {dev_job_id}")
-print(f"🚀 Training started: Run ID {dev_run_id}")
+print(f"🚀 Pipeline started: Run ID {dev_run_id}")
 
 if not wait_for_job_completion(dev_job_id, dev_run_id, "DEV Training", 25):
     handle_job_failure("DEV Training Pipeline", "DEVELOPMENT")
