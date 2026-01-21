@@ -53,10 +53,19 @@ def get_job_id(job_name):
 def create_or_update_job(job_name, tasks, auto_run=False):
     existing_job_id = get_job_id(job_name)
 
+    # ✅ REQUIRED FOR SERVERLESS spark_python_task
+    job_env = jobs.JobEnvironment(
+        environment_key="mlops-env",
+        spec=jobs.EnvironmentSpec(
+            client="1"
+        )
+    )
+
     job_settings = jobs.JobSettings(
         name=job_name,
         tasks=tasks,
-        max_concurrent_runs=1
+        max_concurrent_runs=1,
+        environments=[job_env]   # ✅ ADDED
     )
 
     if existing_job_id:
@@ -68,7 +77,8 @@ def create_or_update_job(job_name, tasks, auto_run=False):
         job_id = w.jobs.create(
             name=job_name,
             tasks=tasks,
-            max_concurrent_runs=1
+            max_concurrent_runs=1,
+            environments=[job_env]   # ✅ ADDED
         ).job_id
 
     if auto_run:
@@ -112,7 +122,8 @@ dev_tasks.append(
         task_key="data_ingestion_preprocessing",
         spark_python_task=jobs.SparkPythonTask(
             python_file=f"{repo_path}/Model_part_2/preprocessing.py"
-        )
+        ),
+        environment_key="mlops-env"   # ✅ ADDED
     )
 )
 print("   📦 Created task: data_ingestion_preprocessing")
@@ -125,7 +136,8 @@ if MODELS_TO_TRAIN.lower() == "all":
             spark_python_task=jobs.SparkPythonTask(
                 python_file=f"{repo_path}/Model_part_2/train.py"
             ),
-            depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")]
+            depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")],
+            environment_key="mlops-env"   # ✅ ADDED
         )
     )
     print("   📦 Created task: train_all_models (depends on ingestion)")
@@ -137,7 +149,8 @@ else:
                 spark_python_task=jobs.SparkPythonTask(
                     python_file=f"{repo_path}/Model_part_2/train.py"
                 ),
-                depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")]
+                depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")],
+                environment_key="mlops-env"   # ✅ ADDED
             )
         )
         print(f"   📦 Created task: train_{model} (depends on ingestion)")
@@ -157,7 +170,8 @@ dev_tasks.append(
         spark_python_task=jobs.SparkPythonTask(
             python_file=f"{repo_path}/Model_part_2/register.py"
         ),
-        depends_on=registration_depends_on
+        depends_on=registration_depends_on,
+        environment_key="mlops-env"   # ✅ ADDED
     )
 )
 print("   📦 Created task: model_registration_task (depends on training)")
