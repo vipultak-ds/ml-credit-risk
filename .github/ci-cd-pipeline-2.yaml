@@ -1,0 +1,138 @@
+name: Databricks MLOps CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Model_part_2/**"
+      - "requirements.txt"
+      - ".github/workflows/ci-cd-pipeline-2.yaml"
+
+env:
+  DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+jobs:
+  deploy:
+    name: Deploy Databricks MLOps Pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+      # ==========================================================
+      # Step 1: Checkout Repository
+      # ==========================================================
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # ==========================================================
+      # Step 2: Setup Python
+      # ==========================================================
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      # ==========================================================
+      # Step 3: Install Dependencies
+      # ==========================================================
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install databricks-sdk pyyaml
+
+      # ==========================================================
+      # Step 4: Validate experiments_config.yml (NO Git Variables)
+      # ==========================================================
+      - name: Validate Models Configuration
+        run: |
+          python3 << 'EOF'
+          import yaml, sys
+
+          # No Git variable now → default "all"
+          models_input = "all"
+          print(f"🔍 MODELS_TO_TRAIN = '{models_input}'")
+
+          try:
+              with open("dev_env/experiments_config.yml") as f:
+                  cfg = yaml.safe_load(f)
+              available_models = list(cfg.get("models", {}).keys())
+          except Exception as e:
+              print(f"❌ Failed to load experiments_config.yml: {e}")
+              sys.exit(1)
+
+          print(f"📋 Available models: {available_models}")
+
+          if not available_models:
+              print("❌ No models found inside experiments_config.yml")
+              sys.exit(1)
+
+          print("✅ Model validation passed (training ALL models)")
+          EOF
+
+      # ==========================================================
+      # Step 5: Sync Repo to Databricks
+      # ==========================================================
+      - name: Sync Git Repository to Databricks Repos
+        run: python Model_part_2/add_repo.py
+
+      # ==========================================================
+      # Step 6: Create / Update Databricks Jobs
+      # ==========================================================
+      - name: Create or Update Databricks Jobs
+        run: python Model_part_2/create_job.py
+
+      # ==========================================================
+      # Slack Notification – SUCCESS
+      # ==========================================================
+      - name: Slack Notification - Success
+        if: success()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "✅ *CI/CD Success* — Databricks MLOps Pipeline",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Pipeline completed successfully*"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Models:* `all`" },
+                    { "type": "mrkdwn", "text": "*Commit:* `${{ github.sha }}`" }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      # ==========================================================
+      # Slack Notification – FAILURE
+      # ==========================================================
+      - name: Slack Notification - Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "❌ *CI/CD Failure* — Databricks MLOps Pipeline",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Pipeline failed — check GitHub Actions logs*"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -1,0 +1,198 @@
+models:
+  enabled: "random_forest"
+  catalog: "workspace"
+  schema: "new"
+  base_name: "credit_model"
+  naming:
+    format: "{catalog}.{schema}.{base_name}_{model_type}"
+
+scheduling:
+  cron: "disabled"
+  timezone: "UTC"
+
+experiment:
+  name: "/Shared/CreditRisk_ML_Experiments"
+  artifact_path: "ml_model"
+  run_name_prefix: "credit_risk"
+
+registry:
+  mode: "always_register"
+
+  duplicate_detection:
+    enabled: true
+    metrics_to_compare:
+      - "test_accuracy"
+      - "test_precision"
+      - "test_recall"
+      - "test_f1"
+      - "test_roc_auc"
+      - "train_accuracy"
+    tolerance: 0.001
+
+  versioning:
+    auto_increment: true
+    track_experiment_id: true
+
+  aliases:
+    auto_assign_best: false
+    staging: "Staging"
+    production: "Production"
+    best: "Best"
+
+metrics:
+  classification:
+    primary_metric: "test_recall"
+    direction: "maximize"
+
+    tracked_metrics:
+      - "test_accuracy"
+      - "test_precision"
+      - "test_recall"
+      - "test_f1"
+      - "test_roc_auc"
+      - "train_accuracy"
+      - "train_time"
+      - "inference_time"
+
+data:
+  input_table: "workspace.new.credit"
+  preprocessed_table: "workspace.new.credit_preprocessed"
+  features:
+    - checking_balance
+    - months_loan_duration
+    - credit_history
+    - purpose
+    - amount
+    - savings_balance
+    - employment_duration
+    - percent_of_income
+    - years_at_residence
+    - age
+    - other_credit
+    - housing
+    - existing_loans_count
+    - job
+    - dependents
+    - phone
+  label: "default"
+
+  split:
+    test_size: 0.2
+    validation_size: 0.1
+    random_state: 42
+    stratify: true
+
+preprocessing:
+  enabled: false
+  output_table: "workspace.new.credit_preprocessed"
+
+  pipeline_models:
+    onehot_model: "/Volumes/workspace/new/ml_feature_artifacts/preprocessing_pipeline/onehot_pipeline"
+    scaler_model: "/Volumes/workspace/new/ml_feature_artifacts/preprocessing_pipeline/scaler_pipeline"
+
+  steps:
+    - name: "unit_cleanup"
+      enabled: true
+    - name: "data_preparation"
+      enabled: true
+    - name: "ordinal_encoding"
+      enabled: true
+    - name: "onehot_encoding"
+      enabled: true
+    - name: "standard_scaling"
+      enabled: true
+
+tables:
+  evaluation_log: "workspace.new.model_evaluation_log"
+  inference_result: "workspace.new.model_inference_result"
+
+workflow:
+  training:
+    enabled: true
+    log_to_mlflow: true
+    save_artifacts: true
+    use_preprocessed_data: false
+
+  evaluation:
+    enabled: true
+    save_to_table: true
+    generate_plots: true
+    compare_with_previous: true
+
+  registration:
+    strategy: "always"
+    smart_rules:
+      skip_duplicates: true
+      respect_thresholds: false
+      track_all_experiments: true
+
+    register_components:
+      model: true
+      preprocessor: false
+      config: true
+      plots: true
+      feature_names: true
+
+  best_model_selection:
+    enabled: false
+
+logging:
+  level: "INFO"
+  log_to_table: true
+  log_to_file: false
+
+  track_artifacts:
+    confusion_matrix: true
+    roc_curve: true
+    feature_importance: true
+    learning_curves: false
+    residual_plots: false
+
+serving:
+  workload_size: "Small"
+  workload_type: "CPU"
+  scale_to_zero_enabled: true
+  min_provisioned_throughput: 0
+  max_provisioned_throughput: 0
+  deployment_timeout: 1800
+  status_check_interval: 15
+
+  endpoint_name_format: "{base_name}-{model_type}-prod"
+
+  environment_vars:
+    ENVIRONMENT: "production"
+    LOG_LEVEL: "info"
+
+notifications:
+  enabled: false
+  triggers:
+    - event: "model_registered"
+      enabled: true
+    - event: "new_champion"
+      enabled: true
+    - event: "uat_failure"
+      enabled: true
+    - event: "training_failure"
+      enabled: true
+
+  channels:
+    email: []
+    slack: []
+    teams: []
+
+comparison:
+  enabled: true
+  comparison_scope: "model_type"
+  recent_n: 10
+  compare_metrics:
+    - test_f1
+    - test_accuracy
+    - test_roc_auc
+    - test_recall
+    - train_time
+    - inference_time
+
+  generate_artifacts:
+    comparison_table: true
+    performance_plot: true
+    rank_models: true
