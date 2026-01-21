@@ -11,7 +11,7 @@ scheduling:
   timezone: "UTC"
 
 experiment:
-  name: "/Shared/CreditRisk_ML_Experiments"
+  name: "/Shared/Credit_Modelpart2_Experiments"
   artifact_path: "ml_model"
   run_name_prefix: "credit_risk"
 
@@ -105,6 +105,13 @@ preprocessing:
 tables:
   evaluation_log: "workspace.new.model_evaluation_log"
   inference_result: "workspace.new.model_inference_result"
+
+  duplicate_handling:
+    enabled: true
+    unique_keys:
+      - model_type
+      - experiment_name
+      - hyperparameters
 
 workflow:
   training:
