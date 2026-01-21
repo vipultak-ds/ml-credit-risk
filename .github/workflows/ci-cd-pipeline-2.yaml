@@ -44,42 +44,13 @@ jobs:
           pip install databricks-sdk pyyaml
 
       # ==========================================================
-      # Step 4: Validate experiments_config.yml (NO Git Variables)
-      # ==========================================================
-      - name: Validate Models Configuration
-        run: |
-          python3 << 'EOF'
-          import yaml, sys
-
-          # No Git variable now → default "all"
-          models_input = "all"
-          print(f"🔍 MODELS_TO_TRAIN = '{models_input}'")
-
-          try:
-              with open("dev_env/experiments_config.yml") as f:
-                  cfg = yaml.safe_load(f)
-              available_models = list(cfg.get("models", {}).keys())
-          except Exception as e:
-              print(f"❌ Failed to load experiments_config.yml: {e}")
-              sys.exit(1)
-
-          print(f"📋 Available models: {available_models}")
-
-          if not available_models:
-              print("❌ No models found inside experiments_config.yml")
-              sys.exit(1)
-
-          print("✅ Model validation passed (training ALL models)")
-          EOF
-
-      # ==========================================================
-      # Step 5: Sync Repo to Databricks
+      # Step 4: Sync Repo to Databricks
       # ==========================================================
       - name: Sync Git Repository to Databricks Repos
-        run: python Model_part_2/add_repo.py
+        run: python scripts/add_repo.py
 
       # ==========================================================
-      # Step 6: Create / Update Databricks Jobs
+      # Step 5: Create / Update Databricks Jobs
       # ==========================================================
       - name: Create or Update Databricks Jobs
         run: python Model_part_2/create_job.py
@@ -105,7 +76,6 @@ jobs:
                 {
                   "type": "section",
                   "fields": [
-                    { "type": "mrkdwn", "text": "*Models:* `all`" },
                     { "type": "mrkdwn", "text": "*Commit:* `${{ github.sha }}`" }
                   ]
                 }
