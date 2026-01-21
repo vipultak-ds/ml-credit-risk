@@ -110,8 +110,8 @@ dev_tasks = []
 dev_tasks.append(
     jobs.Task(
         task_key="data_ingestion_preprocessing",
-        notebook_task=jobs.NotebookTask(
-            notebook_path=f"{repo_path}/Model_part_2/preprocessing"
+        spark_python_task=jobs.SparkPythonTask(
+            python_file=f"{repo_path}/Model_part_2/preprocessing.py"
         )
     )
 )
@@ -122,8 +122,8 @@ if MODELS_TO_TRAIN.lower() == "all":
     dev_tasks.append(
         jobs.Task(
             task_key="train_all_models",
-            notebook_task=jobs.NotebookTask(
-                notebook_path=f"{repo_path}/Model_part_2/train"
+            spark_python_task=jobs.SparkPythonTask(
+                python_file=f"{repo_path}/Model_part_2/train.py"
             ),
             depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")]
         )
@@ -134,8 +134,8 @@ else:
         dev_tasks.append(
             jobs.Task(
                 task_key=f"train_{model}",
-                notebook_task=jobs.NotebookTask(
-                    notebook_path=f"{repo_path}/Model_part_2/train"
+                spark_python_task=jobs.SparkPythonTask(
+                    python_file=f"{repo_path}/Model_part_2/train.py"
                 ),
                 depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")]
             )
@@ -154,8 +154,8 @@ else:
 dev_tasks.append(
     jobs.Task(
         task_key="model_registration_task",
-        notebook_task=jobs.NotebookTask(
-            notebook_path=f"{repo_path}/Model_part_2/register"
+        spark_python_task=jobs.SparkPythonTask(
+            python_file=f"{repo_path}/Model_part_2/register.py"
         ),
         depends_on=registration_depends_on
     )
