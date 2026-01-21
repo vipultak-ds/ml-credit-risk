@@ -53,19 +53,10 @@ def get_job_id(job_name):
 def create_or_update_job(job_name, tasks, auto_run=False):
     existing_job_id = get_job_id(job_name)
 
-    # ✅ REQUIRED FOR SERVERLESS spark_python_task
-    job_env = jobs.JobEnvironment(
-        environment_key="mlops-env",
-        spec=jobs.EnvironmentSpec(
-            client="1"
-        )
-    )
-
     job_settings = jobs.JobSettings(
         name=job_name,
         tasks=tasks,
-        max_concurrent_runs=1,
-        environments=[job_env]   # ✅ ADDED
+        max_concurrent_runs=1
     )
 
     if existing_job_id:
@@ -77,8 +68,7 @@ def create_or_update_job(job_name, tasks, auto_run=False):
         job_id = w.jobs.create(
             name=job_name,
             tasks=tasks,
-            max_concurrent_runs=1,
-            environments=[job_env]   # ✅ ADDED
+            max_concurrent_runs=1
         ).job_id
 
     if auto_run:
@@ -108,7 +98,7 @@ def handle_job_failure(job_name, stage):
     sys.exit(1)
 
 # =====================================================================
-# 4️⃣ DEV JOB — Ingestion → Parallel Training → Register
+# 4️⃣ DEV JOB — Ingestion → Parallel Training → Evaluation → Register
 # =====================================================================
 
 print("\n[STEP 1/1] 🛠️ Creating DEV Training Pipeline...")
@@ -120,10 +110,9 @@ dev_tasks = []
 dev_tasks.append(
     jobs.Task(
         task_key="data_ingestion_preprocessing",
-        spark_python_task=jobs.SparkPythonTask(
-            python_file=f"{repo_path}/Model_part_2/preprocessing.py"
-        ),
-        environment_key="mlops-env"   # ✅ ADDED
+        notebook_task=jobs.NotebookTask(
+            notebook_path=f"{repo_path}/Model_part_2/preprocessing"
+        )
     )
 )
 print("   📦 Created task: data_ingestion_preprocessing")
@@ -133,11 +122,10 @@ if MODELS_TO_TRAIN.lower() == "all":
     dev_tasks.append(
         jobs.Task(
             task_key="train_all_models",
-            spark_python_task=jobs.SparkPythonTask(
-                python_file=f"{repo_path}/Model_part_2/train.py"
+            notebook_task=jobs.NotebookTask(
+                notebook_path=f"{repo_path}/Model_part_2/train"
             ),
-            depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")],
-            environment_key="mlops-env"   # ✅ ADDED
+            depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")]
         )
     )
     print("   📦 Created task: train_all_models (depends on ingestion)")
@@ -146,35 +134,45 @@ else:
         dev_tasks.append(
             jobs.Task(
                 task_key=f"train_{model}",
-                spark_python_task=jobs.SparkPythonTask(
-                    python_file=f"{repo_path}/Model_part_2/train.py"
+                notebook_task=jobs.NotebookTask(
+                    notebook_path=f"{repo_path}/Model_part_2/train"
                 ),
-                depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")],
-                environment_key="mlops-env"   # ✅ ADDED
+                depends_on=[TaskDependency(task_key="data_ingestion_preprocessing")]
             )
         )
         print(f"   📦 Created task: train_{model} (depends on ingestion)")
 
-# ✅ STEP 3: Registration depends on training tasks
+# ✅ STEP 3: Model Evaluation depends on training tasks
 if MODELS_TO_TRAIN.lower() == "all":
-    registration_depends_on = [TaskDependency(task_key="train_all_models")]
+    evaluation_depends_on = [TaskDependency(task_key="train_all_models")]
 else:
-    registration_depends_on = [
+    evaluation_depends_on = [
         TaskDependency(task_key=f"train_{model}")
         for model in models_list
     ]
 
 dev_tasks.append(
     jobs.Task(
-        task_key="model_registration_task",
-        spark_python_task=jobs.SparkPythonTask(
-            python_file=f"{repo_path}/Model_part_2/register.py"
+        task_key="model_evaluation_task",
+        notebook_task=jobs.NotebookTask(
+            notebook_path=f"{repo_path}/Model_part_2/model_evaluation"
         ),
-        depends_on=registration_depends_on,
-        environment_key="mlops-env"   # ✅ ADDED
+        depends_on=evaluation_depends_on
     )
 )
-print("   📦 Created task: model_registration_task (depends on training)")
+print("   📦 Created task: model_evaluation_task (depends on training)")
+
+# ✅ STEP 4: Registration depends on evaluation task
+dev_tasks.append(
+    jobs.Task(
+        task_key="model_registration_task",
+        notebook_task=jobs.NotebookTask(
+            notebook_path=f"{repo_path}/Model_part_2/register"
+        ),
+        depends_on=[TaskDependency(task_key="model_evaluation_task")]
+    )
+)
+print("   📦 Created task: model_registration_task (depends on evaluation)")
 
 dev_job_id, dev_run_id = create_or_update_job(
     "1. dev-ml-training-pipeline",
