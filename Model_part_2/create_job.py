@@ -121,7 +121,7 @@ print("   📦 Created task: data_ingestion_preprocessing")
 if MODELS_TO_TRAIN.lower() == "all":
     dev_tasks.append(
         jobs.Task(
-            task_key="train_all_models",
+            task_key="train_models",
             notebook_task=jobs.NotebookTask(
                 notebook_path=f"{repo_path}/Model_part_2/train"
             ),
@@ -141,35 +141,15 @@ else:
             )
         )
         print(f"   📦 Created task: train_{model} (depends on ingestion)")
-
-# ✅ STEP 3: Model Evaluation depends on training tasks
-if MODELS_TO_TRAIN.lower() == "all":
-    evaluation_depends_on = [TaskDependency(task_key="train_all_models")]
-else:
-    evaluation_depends_on = [
-        TaskDependency(task_key=f"train_{model}")
-        for model in models_list
-    ]
-
-dev_tasks.append(
-    jobs.Task(
-        task_key="model_evaluation_task",
-        notebook_task=jobs.NotebookTask(
-            notebook_path=f"{repo_path}/Model_part_2/model_evaluation.py"
-        ),
-        depends_on=evaluation_depends_on
-    )
-)
-print("   📦 Created task: model_evaluation_task (depends on training)")
-
-# ✅ STEP 4: Registration depends on evaluation task
+ 
+# ✅ STEP 3: Registration depends on evaluation task
 dev_tasks.append(
     jobs.Task(
         task_key="model_registration_task",
         notebook_task=jobs.NotebookTask(
             notebook_path=f"{repo_path}/Model_part_2/register"
         ),
-        depends_on=[TaskDependency(task_key="model_evaluation_task")]
+        depends_on=[TaskDependency(task_key="train_models")]
     )
 )
 print("   📦 Created task: model_registration_task (depends on evaluation)")
