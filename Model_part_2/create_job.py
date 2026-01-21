@@ -154,6 +154,18 @@ dev_tasks.append(
 )
 print("   📦 Created task: model_registration_task (depends on evaluation)")
 
+# ✅ STEP 4: serving depends on registration task
+dev_tasks.append(
+    jobs.Task(
+        task_key="create_serving_endpoint_task",
+        notebook_task=jobs.NotebookTask(
+            notebook_path=f"{repo_path}/Model_part_2/serving"
+        ),
+        depends_on=[TaskDependency(task_key="model_registration_task")]
+    )
+    )
+print("   📦 Created task: create_serving_endpoint_task (depends on model registrtion task)")
+
 dev_job_id, dev_run_id = create_or_update_job(
     "1. dev-ml-training-pipeline",
     tasks=dev_tasks,
